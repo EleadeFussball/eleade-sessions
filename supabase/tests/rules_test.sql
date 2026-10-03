@@ -524,6 +524,12 @@ select pg_temp.check('Stripe-confirmed assessments are not on the Monday list',
 select pg_temp.check('stats count documented sessions without pay or value',
   (select imported and est_income = 0 and coach_pay = 0 from public.stats_sessions where session_id = '00000000-0000-0000-0000-00000000f001'));
 
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select pg_temp.check('Abrechnung history: week 38 has 53 sessions',
+  (select sum(sessions) from public.stats_history where iso_week = 38) = 53);
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select pg_temp.check('coaches cannot read the history', (select count(*) from public.stats_history) = 0);
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;
