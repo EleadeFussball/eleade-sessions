@@ -38,10 +38,12 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <Link href="/log" className="brand">eleade</Link>
-        <Link href="/account" className="who" aria-label="Account and password">{coach.name}</Link>
-      </header>
+      <div className="topbar-wrap">
+        <header className="topbar">
+          <Link href="/log" className="brand" aria-label="Eleade, back to Log"><img src="/eleade-logo-white.svg" alt="eleade" /></Link>
+          <Link href="/account" className="who" aria-label="Account and password">{coach.name}</Link>
+        </header>
+      </div>
       <main className="page">
         {!session.user.user_metadata?.password_set && path !== '/account' && (
           <div className="notice warn">

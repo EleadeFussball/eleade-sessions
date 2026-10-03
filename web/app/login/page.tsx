@@ -50,8 +50,9 @@ export default function LoginPage() {
 
   return (
     <main className="page narrow">
-      <div className="brand" style={{ fontSize: '2.6rem' }}>eleade</div>
-      <p className="muted">Session log for coaches</p>
+      <img src="/eleade-logo.svg" alt="eleade" className="login-logo" />
+      <p className="claim">Football knowledge made in Germany</p>
+      <h1 style={{ fontSize: '1.5rem' }}>Coach sign in</h1>
 
       {mode === 'password' ? (
         <form onSubmit={signIn} className="mt">
