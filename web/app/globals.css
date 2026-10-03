@@ -168,3 +168,7 @@ details.panel[open] > summary { border-bottom: 1px solid var(--line); margin-bot
   .app .topbar { order: -2; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+.planned { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 14px 4px; margin: 0 0 24px; }
+.planned .list { border-top: 0; }
+.planned .list > li:last-child { border-bottom: 0; }

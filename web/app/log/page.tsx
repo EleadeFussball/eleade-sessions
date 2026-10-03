@@ -5,6 +5,8 @@ import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { usePlayers } from '@/lib/usePlayers';
 import { PlayerPicker } from '@/components/PlayerPicker';
+import { PlannedSessions } from '@/components/PlannedSessions';
+import { normaliseTime } from '@/lib/time';
 import { todayISO, addDays, fmtDate, num } from '@/lib/dates';
 import { FORMAT_LABEL, OUTCOME_LABEL, OUTCOME_HINT, MAX_PLAYERS, PAYMENT_LABEL, type Format, type Outcome, type PaymentMethod, type PlayerBalance } from '@/lib/types';
 
@@ -109,7 +111,9 @@ export default function LogPage() {
 
   return (
     <>
+      <PlannedSessions onChanged={reload} />
       <h1>Log a session</h1>
+      <p className="hint" style={{ marginTop: -4 }}>For a session that isn&apos;t a regular one. Set up regular sessions on the player&apos;s page.</p>
       {saved && (
         <div className="notice ok" role="status">
           <strong>{saved.format === 'assessment' ? 'Assessment logged.' : 'Session logged.'}</strong> {saved.names.join(' and ')}, {fmtDate(saved.date, true)}, {OUTCOME_LABEL[saved.outcome].toLowerCase()}.
@@ -255,16 +259,3 @@ export default function LogPage() {
   );
 }
 
-/** '630' -> '06:30', '6.30' -> '06:30', '1800' -> '18:00', '7' -> '07:00'. Empty or invalid -> ''. */
-function normaliseTime(raw: string): string {
-  const t = raw.trim().replace(/[.,h ]/g, ':');
-  if (!t) return '';
-  let h: number, m: number;
-  const parts = t.split(':').filter(Boolean);
-  if (parts.length === 2) { h = Number(parts[0]); m = Number(parts[1]); }
-  else if (/^\d{1,2}$/.test(t)) { h = Number(t); m = 0; }
-  else if (/^\d{3,4}$/.test(t)) { h = Number(t.slice(0, t.length - 2)); m = Number(t.slice(-2)); }
-  else return '';
-  if (!Number.isInteger(h) || !Number.isInteger(m) || h > 23 || m > 59 || h < 0 || m < 0) return '';
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}

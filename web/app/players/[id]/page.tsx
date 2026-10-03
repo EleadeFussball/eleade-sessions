@@ -6,6 +6,7 @@ import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { creditClass } from '@/lib/usePlayers';
 import { SessionItem } from '@/components/SessionItem';
+import { RegularSessions } from '@/components/RegularSessions';
 import { fmtDate, fromISO, money, num, toISO, todayISO } from '@/lib/dates';
 import { PAYMENT_LABEL, type PaymentMethod, type PlayerBalance, type SessionRow } from '@/lib/types';
 
@@ -157,6 +158,8 @@ export default function PlayerPage() {
           ))}
         </ul>
       )}
+
+      {p.active && <RegularSessions playerId={p.id} />}
 
       <h2>Sessions</h2>
       {live.length === 0 && <p className="empty">No sessions logged in the new system yet.</p>}

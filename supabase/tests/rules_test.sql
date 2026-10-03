@@ -221,6 +221,56 @@ with u as (update public.credit_ledger set payment_status = 'confirmed' where re
 select pg_temp.check('coach cannot confirm a package payment', (select count(*) from u) = 0);
 select pg_temp.check('coach cannot see the payments to confirm', (select count(*) from public.payments_to_confirm) = 0);
 
+-- ---------- regular sessions (as Tyler, then Paul) ----------
+insert into public.players (id, name) values ('00000000-0000-0000-0000-0000000000ba', 'Plan Kid');
+select public.create_plan('00000000-0000-0000-0000-0000000000c2', '1:1', extract(isodow from public.today_sydney())::int,
+  '06:30', array['00000000-0000-0000-0000-0000000000ba']::uuid[], 'Moore Park', public.today_sydney() - 7);
+select pg_temp.check('a weekly plan produces one session per week',
+  (select count(*) from public.plan_occurrences(public.today_sydney() - 7, public.today_sydney())) = 2);
+select public.confirm_plan_session((select id from public.session_plans limit 1), public.today_sydney(), 'attended', 'Passing', 'Good', null);
+select pg_temp.check('confirming a planned session logs it with the plan details',
+  (select s.location = 'Moore Park' and s.start_time = '06:30' and s.coach_id = '00000000-0000-0000-0000-0000000000c2'
+     from public.sessions s where s.plan_date = public.today_sydney()));
+select pg_temp.check('a confirmed planned session shows as handled',
+  (select session_id is not null from public.plan_occurrences(public.today_sydney(), public.today_sydney())));
+do $$ begin
+  begin
+    perform public.confirm_plan_session((select id from public.session_plans limit 1), public.today_sydney(), 'attended');
+    perform pg_temp.check('a planned session cannot be confirmed twice', false);
+  exception when others then perform pg_temp.check('a planned session cannot be confirmed twice', true);
+  end;
+  begin
+    perform public.confirm_plan_session((select id from public.session_plans limit 1), public.today_sydney() + 7, 'attended');
+    perform pg_temp.check('a future planned session cannot be confirmed', false);
+  exception when others then perform pg_temp.check('a future planned session cannot be confirmed', true);
+  end;
+end $$;
+select public.move_plan_session((select id from public.session_plans limit 1), public.today_sydney() - 7, public.today_sydney() - 6, '17:00');
+select pg_temp.check('a moved session appears on its new day and time',
+  (select session_date = public.today_sydney() - 6 and start_time = '17:00' and moved
+     from public.plan_occurrences(public.today_sydney() - 7, public.today_sydney()) where plan_date = public.today_sydney() - 7));
+select public.confirm_plan_session((select id from public.session_plans limit 1), public.today_sydney() - 7, 'cancelled_late');
+select pg_temp.check('a planned session can be recorded as a late cancellation on its moved date',
+  (select outcome = 'cancelled_late' and session_date = public.today_sydney() - 6 from public.sessions where plan_date = public.today_sydney() - 7));
+
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a3';
+do $$ begin
+  begin
+    perform public.move_plan_session((select id from public.session_plans limit 1), public.today_sydney() + 7, public.today_sydney() + 8, '07:00');
+    perform pg_temp.check('another coach cannot move someone else''s regular session', false);
+  exception when others then perform pg_temp.check('another coach cannot move someone else''s regular session', true);
+  end;
+end $$;
+with u as (update public.session_plans set ends_on = public.today_sydney() returning 1)
+select pg_temp.check('another coach cannot stop someone else''s regular session', (select count(*) from u) = 0);
+select pg_temp.check('every coach can see the regular sessions', (select count(*) from public.session_plans) = 1);
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+update public.session_plans set ends_on = public.today_sydney();
+select pg_temp.check('a stopped regular session produces no future sessions',
+  (select count(*) from public.plan_occurrences(public.today_sydney() + 1, public.today_sydney() + 30)) = 0);
+select pg_temp.check('stopping keeps the history',
+  (select count(*) from public.plan_occurrences(public.today_sydney() - 7, public.today_sydney())) = 2);
+
 -- ---------- stranger (logged in, not a coach) ----------
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a9';
 select pg_temp.check('non-coach login sees no players', (select count(*) from public.players) = 0);
