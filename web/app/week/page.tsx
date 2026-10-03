@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { addDays, fmtDate, fmtWeek, money, todayISO, weekStart } from '@/lib/dates';
+import { addDays, fmtDate, fmtWeek, money, todayISO, weekStart, isoWeek } from '@/lib/dates';
 import { FORMAT_LABEL, OUTCOME_LABEL, invoiceNo, type CoachInvoice, type Format, type InvoiceLine, type Outcome } from '@/lib/types';
 
 type PayRow = { session_id: string; session_date: string; coach_id: string; coach_name: string;
@@ -172,7 +172,7 @@ export default function WeekPage() {
               <table className="t">
                 <tbody>{invoices.map((i) => (
                   <tr key={i.id}>
-                    <td><Link href={`/invoices/${i.id}`}>{invoiceNo(i)}</Link><br /><span className="hint">Week to {fmtDate(i.period_end)}</span></td>
+                    <td><Link href={`/invoices/${i.id}`}>{invoiceNo(i)}</Link><br /><span className="hint">Week {isoWeek(i.period_start)}, to {fmtDate(i.period_end)}</span></td>
                     <td className="n">{money(i.total)}</td>
                     <td className="n"><span className={i.status === 'paid' ? 'tag turf' : 'tag amber'}>{i.status === 'paid' ? 'Paid' : 'Submitted'}</span></td>
                   </tr>

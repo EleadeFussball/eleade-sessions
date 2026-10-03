@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { creditClass } from '@/lib/usePlayers';
 import { SessionItem } from '@/components/SessionItem';
 import { RegularSessions } from '@/components/RegularSessions';
+import { AssessmentPayment } from '@/components/AssessmentPayment';
 import { fmtDate, fromISO, money, num, toISO, todayISO } from '@/lib/dates';
 import { PAYMENT_LABEL, type PaymentMethod, type PlayerBalance, type SessionRow } from '@/lib/types';
 
@@ -145,6 +146,8 @@ export default function PlayerPage() {
       )}
 
       {p.profile_notes && <div className="notice ok"><strong>Arrangement:</strong> {p.profile_notes}</div>}
+
+      <AssessmentPayment playerId={p.id} playerName={p.name} />
 
       <h2>Notes</h2>
       <form onSubmit={addNote}>

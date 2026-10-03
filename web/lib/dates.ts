@@ -43,7 +43,7 @@ export function fmtDate(s: string | null, withDay = false): string {
 }
 
 export function fmtWeek(start: string): string {
-  return `${fmtDate(start)} to ${fmtDate(addDays(start, 6))}`;
+  return `${fmtDate(start)} to ${fmtDate(addDays(start, 6))} · Week ${isoWeek(start)}`;
 }
 
 export function money(n: number | null | undefined): string {
@@ -55,4 +55,13 @@ export function num(n: number | null | undefined): string {
   if (n === null || n === undefined) return '';
   const v = Number(n);
   return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+/** ISO 8601 calendar week number (weeks start on Monday). */
+export function isoWeek(s: string): number {
+  const d = fromISO(s);
+  const day = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - day + 3);               // Thursday of this week
+  const firstThu = new Date(d.getFullYear(), 0, 4);
+  return 1 + Math.round(((d.getTime() - firstThu.getTime()) / 86400000 - 3 + ((firstThu.getDay() + 6) % 7)) / 7);
 }

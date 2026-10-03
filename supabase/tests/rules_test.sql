@@ -472,6 +472,58 @@ select pg_temp.check('coaches cannot see the business numbers',
   (select count(*) from public.stats_sessions) = 0 and (select count(*) from public.stats_money_in) = 0);
 select pg_temp.check('coaches see expiring packages', exists (select 1 from public.expiring_packages where name = 'Regular Ray'));
 
+-- ---------- stripe assessment payments ----------
+reset role;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+insert into public.sessions (id, session_date, coach_id, format, outcome) values
+  ('00000000-0000-0000-0000-00000000bb01', public.today_sydney(), '00000000-0000-0000-0000-0000000000c2', 'assessment', 'attended');
+insert into public.session_players values ('00000000-0000-0000-0000-00000000bb01', '00000000-0000-0000-0000-0000000000b1');
+select pg_temp.check('a new assessment waits for payment',
+  (select payment_status from public.sessions where id = '00000000-0000-0000-0000-00000000bb01') = 'awaiting');
+select public.record_stripe_payment('cs_test_1', 'assessment_00000000-0000-0000-0000-0000000000b1', 143, 'aud', 'parent@test', 'A Parent', now());
+select pg_temp.check('Stripe payment confirms the logged assessment',
+  (select payment_status = 'confirmed' and payment_method = 'stripe' from public.sessions where id = '00000000-0000-0000-0000-00000000bb01'));
+select pg_temp.check('a repeated Stripe notice is ignored',
+  public.record_stripe_payment('cs_test_1', 'assessment_00000000-0000-0000-0000-0000000000b1', 143, 'aud', null, null, now()) is null
+  and (select count(*) from public.stripe_payments) = 1);
+select public.record_stripe_payment('cs_test_2', 'assessment_00000000-0000-0000-0000-0000000000b5', 143, 'aud', null, null, now());
+insert into public.sessions (id, session_date, coach_id, format, outcome) values
+  ('00000000-0000-0000-0000-00000000bb02', public.today_sydney(), '00000000-0000-0000-0000-0000000000c2', 'assessment', 'attended');
+insert into public.session_players values ('00000000-0000-0000-0000-00000000bb02', '00000000-0000-0000-0000-0000000000b5');
+select pg_temp.check('paid in advance: the assessment is confirmed when logged',
+  (select payment_status from public.sessions where id = '00000000-0000-0000-0000-00000000bb02') = 'confirmed');
+select public.record_stripe_payment('cs_test_3', null, 143, 'aud', 'other@test', 'Other Parent', now());
+insert into public.sessions (id, session_date, coach_id, format, outcome) values
+  ('00000000-0000-0000-0000-00000000bb03', public.today_sydney(), '00000000-0000-0000-0000-0000000000c2', 'assessment', 'attended');
+insert into public.session_players values ('00000000-0000-0000-0000-00000000bb03', '00000000-0000-0000-0000-0000000000b3');
+select pg_temp.check('a payment without a player stays unmatched',
+  (select purpose = 'unknown' and player_id is null from public.stripe_payments where stripe_session_id = 'cs_test_3')
+  and (select payment_status from public.sessions where id = '00000000-0000-0000-0000-00000000bb03') = 'awaiting');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+do $$ begin
+  begin
+    perform public.record_stripe_payment('cs_fake', 'assessment_00000000-0000-0000-0000-0000000000b3', 143, 'aud', null, null, now());
+    perform pg_temp.check('coaches cannot fake a Stripe payment', false);
+  exception when others then perform pg_temp.check('coaches cannot fake a Stripe payment', true);
+  end;
+  begin
+    perform public.assign_stripe_payment((select id from public.stripe_payments where stripe_session_id = 'cs_test_3'), '00000000-0000-0000-0000-0000000000b3');
+    perform pg_temp.check('coaches cannot assign Stripe payments', false);
+  exception when others then perform pg_temp.check('coaches cannot assign Stripe payments', true);
+  end;
+end $$;
+select pg_temp.check('coaches see Stripe payments', (select count(*) from public.stripe_payments) = 3);
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select public.assign_stripe_payment((select id from public.stripe_payments where stripe_session_id = 'cs_test_3'), '00000000-0000-0000-0000-0000000000b3');
+select pg_temp.check('Jan assigns an unmatched payment and it confirms the assessment',
+  (select payment_status from public.sessions where id = '00000000-0000-0000-0000-00000000bb03') = 'confirmed');
+select pg_temp.check('Stripe-confirmed assessments are not on the Monday list',
+  not exists (select 1 from public.payments_to_confirm where item_id in ('00000000-0000-0000-0000-00000000bb01','00000000-0000-0000-0000-00000000bb02','00000000-0000-0000-0000-00000000bb03')));
+
+select pg_temp.check('stats count documented sessions without pay or value',
+  (select imported and est_income = 0 and coach_pay = 0 from public.stats_sessions where session_id = '00000000-0000-0000-0000-00000000f001'));
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;

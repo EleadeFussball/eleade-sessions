@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { fmtDate, fromISO, money } from '@/lib/dates';
+import { fmtDate, fromISO, money, isoWeek } from '@/lib/dates';
 
 const longDate = (s: string) => (s.length > 10 ? new Date(s) : fromISO(s)).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
 import { fmtAbn, fmtBsb } from '@/lib/bank';
@@ -52,7 +52,7 @@ export default function InvoicePage() {
           </div>
           <div className="inv-meta">
             <div>Issued {longDate(inv.issued_on)}</div>
-            <div>Week {fmtDate(inv.period_start)} to {longDate(inv.period_end)}</div>
+            <div>Week {isoWeek(inv.period_start)}: {fmtDate(inv.period_start)} to {longDate(inv.period_end)}</div>
             <div className={inv.status === 'paid' ? 'inv-status paid' : 'inv-status'}>
               {inv.status === 'paid' && inv.paid_at ? `Paid ${longDate(inv.paid_at)}` : 'Awaiting payment'}
             </div>

@@ -117,13 +117,16 @@ function BusinessDetails() {
   const [acctName, setAcctName] = useState('');
   const [userId, setUserId] = useState('000000');
   const [remitter, setRemitter] = useState('ELEADE');
+  const [stripeLink, setStripeLink] = useState('');
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
 
   useEffect(() => {
-    supabase.from('settings').select('key, value').in('key', ['business_name', 'business_abn']).then(({ data }) => {
+    supabase.from('settings').select('key, value').in('key', ['business_name', 'business_abn', 'stripe_assessment_link']).then(({ data }) => {
       for (const r of (data as { key: string; value: string }[]) ?? []) {
-        if (r.key === 'business_name') setName(r.value ?? ''); else setAbn(r.value ?? '');
+        if (r.key === 'business_name') setName(r.value ?? '');
+        else if (r.key === 'business_abn') setAbn(r.value ?? '');
+        else setStripeLink(r.value ?? '');
       }
     });
     supabase.from('bank_file_settings').select('*').maybeSingle().then(({ data }) => {
@@ -139,8 +142,10 @@ function BusinessDetails() {
     if (a && !validAbn(a)) { setErr('That ABN is not valid.'); return; }
     if (b && b.length !== 6) { setErr('A BSB has 6 digits.'); return; }
     if (n && (n.length < 4 || n.length > 9)) { setErr('An account number has 4 to 9 digits.'); return; }
+    const sl = stripeLink.trim();
+    if (sl && !/^https:\/\/(buy\.stripe\.com|checkout\.stripe\.com)\//.test(sl)) { setErr('The Stripe link should start with https://buy.stripe.com/'); return; }
     if (u.length !== 6) { setErr('The User ID has 6 digits. Use 000000 if NAB has not given you one.'); return; }
-    const s1 = await supabase.from('settings').upsert([{ key: 'business_name', value: name.trim() || 'Eleade' }, { key: 'business_abn', value: a }]);
+    const s1 = await supabase.from('settings').upsert([{ key: 'business_name', value: name.trim() || 'Eleade' }, { key: 'business_abn', value: a }, { key: 'stripe_assessment_link', value: sl }]);
     if (s1.error) { setErr(errorText(s1.error)); return; }
     const s2 = await supabase.from('bank_file_settings').update({
       bsb: b || null, account_number: n || null, account_name: acctName.trim() || null, user_id_number: u,
@@ -153,7 +158,7 @@ function BusinessDetails() {
 
   return (
     <details className="panel">
-      <summary>Eleade details for invoices and the NAB payment file</summary>
+      <summary>Eleade details: invoices, NAB payment file, Stripe link</summary>
       <form onSubmit={save}>
         <p className="hint">The business name and ABN appear as &quot;To&quot; on coach invoices. The account below is the one coaches are paid from; only you can see it.</p>
         <div className="row">
@@ -170,6 +175,9 @@ function BusinessDetails() {
           <label className="field" style={{ flex: '0 0 130px' }}><span>User ID</span><input type="text" inputMode="numeric" value={userId} onChange={(e) => setUserId(e.target.value)} /></label>
         </div>
         <p className="hint">Leave the User ID as 000000 unless NAB has given you a Direct Entry User ID.</p>
+        <label className="field"><span>Stripe payment link for assessments</span>
+          <input type="url" value={stripeLink} onChange={(e) => setStripeLink(e.target.value)} placeholder="https://buy.stripe.com/..." /></label>
+        <p className="hint">Coaches send this from the player&apos;s page. Each link is tagged with the player, so the payment confirms their assessment automatically.</p>
         {err && <div className="notice err" role="alert">{err}</div>}
         {msg && <div className="notice ok" role="status">{msg}</div>}
         <button className="btn small">Save details</button>
