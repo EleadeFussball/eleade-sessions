@@ -211,6 +211,8 @@ details.panel[open] > summary { border-bottom: 1px solid var(--line); margin-bot
 @media (min-width: 640px) { .tiles { grid-template-columns: repeat(3, 1fr); } }
 .tile { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
 .tile-label { color: var(--muted); font-size: .85rem; line-height: 1.2; min-height: 2.1em; }
+.tile-key { background: var(--ink); color: #fff; border-color: var(--ink); }
+.tile-key .tile-label { color: #fff; opacity: .8; }
 .tile-value { font: 800 1.9rem/1.1 var(--score); font-variant-numeric: tabular-nums; margin-top: 4px; }
 .bars { display: flex; align-items: flex-end; gap: 4px; height: 170px; padding: 18px 0 0; border-bottom: 1px solid var(--line); }
 .bar-col { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; min-width: 0; }

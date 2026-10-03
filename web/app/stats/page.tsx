@@ -13,8 +13,14 @@ type Move = { plan_id: string; plan_date: string; coach_id: string; coach_name: 
 type PlayerOutcome = { player_id: string; name: string; session_date: string; outcome: Outcome };
 type History = { week_start: string; iso_week: number; coach_name: string | null; sessions: number; analyses: number; pay: number | null };
 
-// Pay per game analysis for the weeks before the app (Jan, 4 Oct 2026).
+// Jan's assumptions (4 Oct 2026), ex GST: every session is charged $120, an assessment $130,
+// a game analysis $120. Coaches get $60 per game analysis before the app.
+const SESSION_PRICE = 120;
+const ASSESSMENT_PRICE = 130;
+const ANALYSIS_PRICE = 120;
 const HISTORY_ANALYSIS_RATE = 60;
+const revenueOf = (r: { format: Format; outcome: Outcome }) =>
+  r.outcome === 'cancelled_in_time' ? 0 : r.format === 'assessment' ? ASSESSMENT_PRICE : r.format === 'analysis' ? ANALYSIS_PRICE : SESSION_PRICE;
 
 const money = (n: number) => `${n < 0 ? '−' : ''}$${Math.round(Math.abs(n)).toLocaleString('en-AU')}`;
 const pct = (n: number, d: number) => (d ? `${Math.round((n / d) * 100)}%` : '');
@@ -90,40 +96,42 @@ export default function StatsPage() {
   const perWeek = useMemo(() => weekList.map((w) => {
     const end = addDays(w, 6);
     const r = rows.filter((x) => x.week_start === w);
-    let sessions: number, analyses: number, pay: number;
+    let sessions: number, analyses: number, pay: number, revenue: number;
     if (fromHistory(w)) {
       const h = history.filter((x) => x.week_start === w);
       sessions = h.reduce((t, x) => t + Number(x.sessions), 0);
       analyses = Math.max(h.reduce((t, x) => t + Number(x.analyses), 0), docAnalyses.filter((x) => x.week_start === w).length);
       pay = h.filter((x) => x.coach_name).reduce((t, x) => t + Number(x.pay ?? 0), 0) + analyses * HISTORY_ANALYSIS_RATE;
+      revenue = sessions * SESSION_PRICE + analyses * ANALYSIS_PRICE;
     } else {
       sessions = r.filter((x) => x.outcome === 'attended' && x.format !== 'analysis').length;
       analyses = r.filter((x) => x.outcome === 'attended' && x.format === 'analysis').length;
       pay = r.reduce((t, x) => t + Number(x.coach_pay), 0);
+      revenue = r.reduce((t, x) => t + revenueOf(x), 0);
     }
     return {
       week: w, sessions, analyses, history: fromHistory(w),
       income: moneyIn.filter((m) => m.received_on >= w && m.received_on <= end).reduce((t, m) => t + Number(m.amount), 0),
-      pay,
+      pay, revenue, earned: revenue - pay,
     };
   }), [weekList, rows, history, docAnalyses, moneyIn, historyUntil]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sessionsByCoach = useMemo(() => {
-    const m = new Map<string, { n: number; pay: number; noRate: boolean }>();
-    const get = (c: string) => { if (!m.has(c)) m.set(c, { n: 0, pay: 0, noRate: false }); return m.get(c)!; };
+    const m = new Map<string, { n: number; pay: number; revenue: number; noRate: boolean }>();
+    const get = (c: string) => { if (!m.has(c)) m.set(c, { n: 0, pay: 0, revenue: 0, noRate: false }); return m.get(c)!; };
     for (const h of history) {
       if (!h.coach_name || !fromHistory(h.week_start)) continue;
-      const e = get(h.coach_name); e.n += Number(h.sessions);
+      const e = get(h.coach_name); e.n += Number(h.sessions); e.revenue += Number(h.sessions) * SESSION_PRICE;
       if (h.pay === null) { if (Number(h.sessions) > 0) e.noRate = true; } else e.pay += Number(h.pay);
     }
     for (const r of appRows) {
       const e = get(r.coach_name);
       if (r.outcome === 'attended' && r.format !== 'analysis') e.n += 1;
-      e.pay += Number(r.coach_pay);
+      e.pay += Number(r.coach_pay); e.revenue += revenueOf(r);
     }
     return [...m.entries()].filter(([, e]) => e.n > 0 || e.pay > 0).sort((a, b) => b[1].n - a[1].n);
   }, [history, appRows, historyUntil]); // eslint-disable-line react-hooks/exhaustive-deps
-  const historyAnalysisPay = perWeek.filter((w) => w.history).reduce((t, w) => t + w.analyses * HISTORY_ANALYSIS_RATE, 0);
+  const historyAnalyses = perWeek.filter((w) => w.history).reduce((t, w) => t + w.analyses, 0);
 
   const totals = useMemo(() => ({
     sessions: perWeek.reduce((t, w) => t + w.sessions, 0),
@@ -131,8 +139,7 @@ export default function StatsPage() {
     historyWeeks: perWeek.filter((w) => w.history).length,
     income: moneyIn.reduce((t, m) => t + Number(m.amount), 0),
     pay: perWeek.reduce((t, w) => t + w.pay, 0),
-    appPay: appRows.reduce((t, x) => t + Number(x.coach_pay), 0),
-    est: appRows.reduce((t, x) => t + Number(x.est_income), 0),
+    revenue: perWeek.reduce((t, w) => t + w.revenue, 0),
   }), [appRows, moneyIn, perWeek]);
 
   const byType = useMemo(() => {
@@ -140,7 +147,7 @@ export default function StatsPage() {
     for (const r of appRows) {
       if (!counts(r.outcome)) continue;
       const e = m.get(r.format) ?? { n: 0, app: 0, income: 0, pay: 0 };
-      e.n += 1; e.app += 1; e.income += Number(r.est_income); e.pay += Number(r.coach_pay);
+      e.n += 1; e.app += 1; e.income += revenueOf(r); e.pay += Number(r.coach_pay);
       m.set(r.format, e);
     }
     return [...m.entries()].sort((a, b) => b[1].n - a[1].n);
@@ -206,13 +213,13 @@ export default function StatsPage() {
           <div className="tiles">
             <div className="tile"><div className="tile-label">Sessions delivered</div><div className="tile-value">{n1(totals.sessions)}</div></div>
             <div className="tile"><div className="tile-label">Game analyses</div><div className="tile-value">{n1(totals.analyses)}</div></div>
-            <div className="tile"><div className="tile-label">Money in</div><div className="tile-value">{money(totals.income)}</div></div>
+            <div className="tile"><div className="tile-label">Revenue</div><div className="tile-value">{money(totals.revenue)}</div></div>
             <div className="tile"><div className="tile-label">Coach pay</div><div className="tile-value">{money(totals.pay)}</div></div>
-            <div className="tile"><div className="tile-label">Session value after coach pay (app sessions)</div><div className="tile-value">{totals.est || totals.appPay ? money(totals.est - totals.appPay) : '–'}</div></div>
-            <div className="tile"><div className="tile-label">Late cancellations and no-shows</div><div className="tile-value">{pct(all.late + all.noShow, all.booked) || '–'}</div></div>
+            <div className="tile tile-key"><div className="tile-label">Earned after coach pay</div><div className="tile-value">{money(totals.revenue - totals.pay)}</div></div>
+            <div className="tile"><div className="tile-label">Earned per week, average</div><div className="tile-value">{money((totals.revenue - totals.pay) / nWeeks)}</div></div>
           </div>
-          {totals.historyWeeks > 0 && <p className="hint">Up to week {isoWeek(historyUntil)}, session counts come from the Abrechnung (the weekly session totals per coach), and game analyses from the Abrechnung or the documentation file, whichever has more. From week {isoWeek(addDays(historyUntil, 7))}, they come from sessions logged in the app. Coach pay before the app uses the session rates (Tyler $60, Paul $60, David $50, Jani $120) and $60 per game analysis. Session value and cancellations only cover sessions logged in the app.</p>}
-          <p className="hint">Money in is what was received (packages, weekly transfers, confirmed single payments). Session value is what the sessions delivered were worth at each player&apos;s price, so it doesn&apos;t swing when a big package is paid.</p>
+          {totals.historyWeeks > 0 && <p className="hint">Up to week {isoWeek(historyUntil)}, session counts come from the Abrechnung (the weekly session totals per coach), and game analyses from the Abrechnung or the documentation file, whichever has more. From week {isoWeek(addDays(historyUntil, 7))}, they come from sessions logged in the app. Cancellations only cover sessions logged in the app.</p>}
+          <p className="hint">Revenue assumes every session is charged $120, an assessment $130 and a game analysis $120 (all ex GST); late cancellations and no-shows are charged too. Coach pay: Tyler and Paul $60, David $50, Luca $55 per session, $60 per game analysis. Jani&apos;s sessions have no coach cost.</p>
 
           <h2>Sessions per week</h2>
           <div className={`bars${nWeeks > 4 ? ' dense' : ''}${nWeeks > 12 ? ' xdense' : ''}`} role="img" aria-label="Sessions delivered per week">
@@ -226,32 +233,33 @@ export default function StatsPage() {
           </div>
 
           <table className="t mt">
-            <thead><tr><th>Week</th><th className="n">Sessions</th><th className="n">Analyses</th><th className="n">Money in</th><th className="n">Coach pay</th></tr></thead>
+            <thead><tr><th>Week</th><th className="n">Sessions</th><th className="n">Revenue</th><th className="n">Coach pay</th><th className="n">Earned</th></tr></thead>
             <tbody>{[...perWeek].reverse().map((w) => (
-              <tr key={w.week}><td>Week {isoWeek(w.week)}<br /><span className="hint">{fmtDate(w.week)}</span></td><td className="n">{n1(w.sessions)}</td><td className="n">{n1(w.analyses)}</td><td className="n">{money(w.income)}</td><td className="n">{money(w.pay)}</td></tr>
+              <tr key={w.week}><td>Week {isoWeek(w.week)}<br /><span className="hint">{fmtDate(w.week)}</span></td><td className="n">{n1(w.sessions)}{w.analyses > 0 && <><br /><span className="hint">+{n1(w.analyses)} {w.analyses === 1 ? "analysis" : "analyses"}</span></>}</td><td className="n">{money(w.revenue)}</td><td className="n">{money(w.pay)}</td><td className="n"><strong>{money(w.earned)}</strong></td></tr>
             ))}</tbody>
           </table>
 
           <h2>Sessions by coach</h2>
           {sessionsByCoach.length === 0 ? <p className="empty">No sessions in this period.</p> : (
             <table className="t">
-              <thead><tr><th>Coach</th><th className="n">Sessions</th><th className="n">Share</th><th className="n">Pay</th></tr></thead>
+              <thead><tr><th>Coach</th><th className="n">Sessions</th><th className="n">Revenue</th><th className="n">Pay</th><th className="n">Earned</th></tr></thead>
               <tbody>{sessionsByCoach.map(([c, e]) => (
-                <tr key={c}><td>{c}</td><td className="n">{n1(e.n)}</td><td className="n">{pct(e.n, totals.sessions)}</td>
-                  <td className="n">{money(e.pay)}{e.noRate && <><br /><span className="hint">no rate</span></>}</td></tr>
+                <tr key={c}><td>{c}</td><td className="n">{n1(e.n)}<br /><span className="hint">{pct(e.n, totals.sessions)}</span></td><td className="n">{money(e.revenue)}</td>
+                  <td className="n">{money(e.pay)}</td><td className="n"><strong>{money(e.revenue - e.pay)}</strong></td></tr>
               ))}
-              {historyAnalysisPay > 0 && (
-                <tr><td>Game analyses<br /><span className="hint">before the app, all coaches</span></td><td className="n"></td><td className="n"></td><td className="n">{money(historyAnalysisPay)}</td></tr>
+              {historyAnalyses > 0 && (
+                <tr><td>Game analyses<br /><span className="hint">before the app</span></td><td className="n">{n1(historyAnalyses)}</td><td className="n">{money(historyAnalyses * ANALYSIS_PRICE)}</td>
+                  <td className="n">{money(historyAnalyses * HISTORY_ANALYSIS_RATE)}</td><td className="n"><strong>{money(historyAnalyses * (ANALYSIS_PRICE - HISTORY_ANALYSIS_RATE))}</strong></td></tr>
               )}</tbody>
-              <tfoot><tr><td>Total</td><td className="n">{n1(totals.sessions)}</td><td></td><td className="n">{money(totals.pay)}</td></tr></tfoot>
+              <tfoot><tr><td>Total</td><td className="n"></td><td className="n">{money(totals.revenue)}</td><td className="n">{money(totals.pay)}</td><td className="n">{money(totals.revenue - totals.pay)}</td></tr></tfoot>
             </table>
           )}
 
           <h2>By session type</h2>
-          <p className="hint">Charged sessions only (attended, late cancellations and no-shows). Value per player uses their package price per session, or their single-session price. Game analyses and testing are counted as included in packages. Sessions logged in the app only; the Abrechnung doesn&apos;t record the session type.</p>
+          <p className="hint">Charged sessions logged in the app (attended, late cancellations and no-shows), at the same prices. The Abrechnung doesn&apos;t record the session type.</p>
           {byType.length === 0 ? <p className="empty">No sessions logged in the app in this period.</p> : (
             <table className="t">
-              <thead><tr><th>Type</th><th className="n">Sessions</th><th className="n">Value</th><th className="n">Coach pay</th><th className="n">Margin</th></tr></thead>
+              <thead><tr><th>Type</th><th className="n">Sessions</th><th className="n">Revenue</th><th className="n">Coach pay</th><th className="n">Earned</th></tr></thead>
               <tbody>{byType.map(([f, e]) => (
                 <tr key={f}>
                   <td>{FORMAT_LABEL[f]}</td><td className="n">{e.n}</td><td className="n">{money(e.income)}</td><td className="n">{money(e.pay)}</td>
