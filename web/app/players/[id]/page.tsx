@@ -7,14 +7,15 @@ import { useAuth } from '@/lib/auth';
 import { creditClass } from '@/lib/usePlayers';
 import { SessionItem } from '@/components/SessionItem';
 import { fmtDate, fromISO, money, num, toISO, todayISO } from '@/lib/dates';
-import type { PlayerBalance, SessionRow } from '@/lib/types';
+import { PAYMENT_LABEL, type PaymentMethod, type PlayerBalance, type SessionRow } from '@/lib/types';
 
 type Player = {
   id: string; name: string; family: string | null; billing_model: 'package' | 'pay_per_session';
   session_price: number | null; main_coach_id: string | null; active: boolean; opening_confirmed: boolean; profile_notes: string | null;
 };
 type Ledger = { id: string; kind: string; sessions_delta: number; analyses_delta: number; package_name: string | null;
-  amount_paid: number | null; reason: string; effective_date: string; expires_on: string | null; player_id: string };
+  amount_paid: number | null; reason: string; effective_date: string; expires_on: string | null; player_id: string;
+  payment_status: 'awaiting' | 'confirmed'; payment_method: PaymentMethod | null; confirmed_at: string | null };
 type Note = { id: string; body: string; author: string | null; created_at: string };
 
 const KIND_LABEL: Record<string, string> = { opening: 'Opening balance', purchase: 'Package bought', free: 'Free session', correction: 'Correction', expiry: 'Expired' };
@@ -67,6 +68,10 @@ export default function PlayerPage() {
     if (!noteText.trim()) return;
     const { error } = await supabase.from('player_notes').insert({ player_id: id, body: noteText.trim() });
     if (error) setErr(errorText(error)); else { setNoteText(''); load(); }
+  }
+  async function confirmPackage(ledgerId: string) {
+    const { error } = await supabase.from('credit_ledger').update({ payment_status: 'confirmed' }).eq('id', ledgerId);
+    if (error) setErr(errorText(error)); else load();
   }
   async function deleteNote(n: Note) {
     const { error } = await supabase.from('player_notes').delete().eq('id', n.id);
@@ -144,7 +149,20 @@ export default function PlayerPage() {
             {ledger.map((l) => (
               <tr key={l.id}>
                 <td>{fmtDate(l.effective_date)}</td>
-                <td>{KIND_LABEL[l.kind] ?? l.kind}{l.package_name ? `, ${l.package_name}` : ''}<br /><span className="hint">{l.reason}</span></td>
+                <td>
+                  {KIND_LABEL[l.kind] ?? l.kind}{l.package_name ? `, ${l.package_name}` : ''}{l.amount_paid ? `, ${money(l.amount_paid)}` : ''}
+                  <br /><span className="hint">{l.reason}{l.payment_method ? `, paid by ${PAYMENT_LABEL[l.payment_method].toLowerCase()}` : ''}</span>
+                  {l.kind === 'purchase' && (
+                    <div style={{ marginTop: 4 }}>
+                      {l.payment_status === 'awaiting'
+                        ? <span className="tag amber">Payment to check</span>
+                        : <span className="tag turf">Payment checked</span>}
+                      {isAdmin && l.payment_status === 'awaiting' && (
+                        <button type="button" className="linkbtn" style={{ marginLeft: 10 }} onClick={() => confirmPackage(l.id)}>Confirm paid</button>
+                      )}
+                    </div>
+                  )}
+                </td>
                 <td className="n">{Number(l.sessions_delta) > 0 ? '+' : ''}{num(l.sessions_delta)}</td>
                 <td className="n">{Number(l.analyses_delta) > 0 ? '+' : ''}{num(l.analyses_delta)}</td>
               </tr>
@@ -153,6 +171,7 @@ export default function PlayerPage() {
         </table>
       )}
 
+      {p.billing_model === 'package' && <RecordPackage playerId={p.id} name={p.name} onSaved={load} />}
       {isAdmin && <AdminPanel p={p} onSaved={load} />}
       {err && <div className="notice err">{err}</div>}
     </>
@@ -167,7 +186,7 @@ const PACKAGES = [
 
 function AdminPanel({ p, onSaved }: { p: Player; onSaved: () => void }) {
   const { coaches } = useAuth();
-  const [kind, setKind] = useState('purchase');
+  const [kind, setKind] = useState('free');
   const [pkg, setPkg] = useState('');
   const [s, setS] = useState('');
   const [a, setA] = useState('0');
@@ -221,10 +240,10 @@ function AdminPanel({ p, onSaved }: { p: Player; onSaved: () => void }) {
       {msg && <div className="notice ok">{msg}</div>}
       {err && <div className="notice err">{err}</div>}
       <details className="panel">
-        <summary>Add or correct credits</summary>
+        <summary>Free session or correction</summary>
         <form onSubmit={addCredits}>
           <div className="seg" style={{ marginBottom: 12 }}>
-            {[['purchase', 'Package bought'], ['free', 'Free session'], ['correction', 'Correction']].map(([k, l]) => (
+            {[['free', 'Free session'], ['correction', 'Correction']].map(([k, l]) => (
               <button key={k} type="button" aria-pressed={kind === k} onClick={() => { setKind(k); if (k !== 'purchase') setPkg(''); }}>{l}</button>
             ))}
           </div>
@@ -277,5 +296,68 @@ function AdminPanel({ p, onSaved }: { p: Player; onSaved: () => void }) {
         </form>
       </details>
     </>
+  );
+}
+
+function RecordPackage({ playerId, name, onSaved }: { playerId: string; name: string; onSaved: () => void }) {
+  const { isAdmin } = useAuth();
+  const [pkg, setPkg] = useState('');
+  const [method, setMethod] = useState<PaymentMethod | ''>('');
+  const [date, setDate] = useState(todayISO());
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+  const k = PACKAGES.find((x) => x.name === pkg);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault(); setErr(''); setMsg('');
+    if (!k) { setErr('Pick the package first.'); return; }
+    setBusy(true);
+    let expires: string | null = null;
+    if (k.months) { const d = fromISO(date); d.setMonth(d.getMonth() + k.months); expires = toISO(d); }
+    const { error } = await supabase.from('credit_ledger').insert({
+      player_id: playerId, kind: 'purchase', sessions_delta: k.s, analyses_delta: k.a,
+      package_name: k.name, amount_paid: k.price, payment_method: method || null,
+      payment_status: isAdmin && method ? 'confirmed' : 'awaiting',
+      reason: `Bought ${k.name}`, effective_date: date, expires_on: expires,
+    });
+    setBusy(false);
+    if (error) { setErr(errorText(error)); return; }
+    setMsg(isAdmin
+      ? `${k.name} added for ${name}${method ? ', payment checked.' : '. Confirm the payment in the credit history once it arrives.'}`
+      : `${k.name} added for ${name}. The credits work straight away, and Jan will check the payment.`);
+    setPkg(''); setMethod(''); onSaved();
+  }
+
+  return (
+    <details className="panel">
+      <summary>Record a package bought</summary>
+      <form onSubmit={save}>
+        <div className="field">
+          <span className="fieldlabel">Package</span>
+          <div className="seg">
+            {PACKAGES.map((x) => (
+              <button key={x.name} type="button" aria-pressed={pkg === x.name} onClick={() => setPkg(x.name)}>
+                {x.name}
+              </button>
+            ))}
+          </div>
+          {k && <p className="hint mt">{k.s} sessions{k.a ? ` and ${k.a} game ${k.a === 1 ? 'analysis' : 'analyses'}` : ''}, {money(k.price)} ex GST{k.months ? `, valid ${k.months} months` : ', per month'}.</p>}
+        </div>
+        <div className="field">
+          <span className="fieldlabel">How did they pay?</span>
+          <div className="seg">
+            {(['stripe', 'bank', 'cash'] as PaymentMethod[]).map((m) => (
+              <button key={m} type="button" aria-pressed={method === m} onClick={() => setMethod(method === m ? '' : m)}>{PAYMENT_LABEL[m]}</button>
+            ))}
+            <button type="button" aria-pressed={method === ''} onClick={() => setMethod('')}>Not paid yet</button>
+          </div>
+        </div>
+        <label className="field"><span>Date bought</span><input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} /></label>
+        {err && <div className="notice err" role="alert">{err}</div>}
+        {msg && <div className="notice ok" role="status">{msg}</div>}
+        <button className="btn small" disabled={busy}>{busy ? 'Saving' : 'Add package'}</button>
+      </form>
+    </details>
   );
 }

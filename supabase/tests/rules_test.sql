@@ -141,6 +141,61 @@ select pg_temp.check('coach cannot delete imported history', (select count(*) fr
 insert into public.player_notes (player_id, body) values ('00000000-0000-0000-0000-0000000000b1', 'Prefers left side');
 select pg_temp.check('coach can add a profile note', (select count(*) from public.player_notes) = 1);
 
+-- ---------- assessments and coach-recorded packages (as Tyler) ----------
+insert into public.players (id, name, main_coach_id) values
+  ('00000000-0000-0000-0000-0000000000b9', 'New Kid', '00000000-0000-0000-0000-0000000000c2');
+select pg_temp.check('coach can add a new player', exists (select 1 from public.players where name = 'New Kid'));
+do $$ begin
+  begin
+    insert into public.players (name, opening_confirmed) values ('Sneaky', true);
+    perform pg_temp.check('coach cannot add a player with a confirmed balance', false);
+  exception when others then perform pg_temp.check('coach cannot add a player with a confirmed balance', true);
+  end;
+end $$;
+select public.log_session(public.today_sydney() - 2, '00000000-0000-0000-0000-0000000000c2', 'assessment', 'attended',
+  array['00000000-0000-0000-0000-0000000000b9']::uuid[], 'Moore Park', null, 'Assessment', 'Strong left foot', null, 'stripe');
+select pg_temp.check('assessment is awaiting payment check',
+  (select payment_status = 'awaiting' and payment_method = 'stripe' from public.sessions where format = 'assessment'));
+select pg_temp.check('assessment pays the coach their 1:1 rate',
+  (select pay from public.coach_pay where format = 'assessment') = 65);
+select pg_temp.check('assessment uses no package credits',
+  (select sessions_left from public.player_balances where name = 'New Kid') = 0);
+update public.sessions set payment_status = 'confirmed' where format = 'assessment';
+select pg_temp.check('coach cannot mark an assessment as paid',
+  (select payment_status from public.sessions where format = 'assessment') = 'awaiting');
+do $$ begin
+  begin
+    perform public.log_session(public.today_sydney(), '00000000-0000-0000-0000-0000000000c2', 'assessment', 'attended',
+      array['00000000-0000-0000-0000-0000000000b9', '00000000-0000-0000-0000-0000000000b1']::uuid[]);
+    perform pg_temp.check('assessment with two players is refused', false);
+  exception when others then perform pg_temp.check('assessment with two players is refused', true);
+  end;
+end $$;
+
+insert into public.credit_ledger (player_id, kind, sessions_delta, analyses_delta, package_name, amount_paid, payment_method, reason)
+  values ('00000000-0000-0000-0000-0000000000b9', 'purchase', 5, 0, '5 pack', 650, 'stripe', 'Bought 5 pack after assessment');
+select public.log_session(public.today_sydney() - 2, '00000000-0000-0000-0000-0000000000c2', '1:1', 'attended',
+  array['00000000-0000-0000-0000-0000000000b4']::uuid[], null, null, null, null, null, 'cash');
+select pg_temp.check('a cash session waits for Jan to confirm the cash',
+  (select payment_status from public.sessions where payment_method = 'cash') = 'awaiting');
+select pg_temp.check('a cash session from a weekly payer is not added to their transfer',
+  not exists (select 1 from public.credit_usage cu join public.sessions s on s.id = cu.session_id where s.payment_method = 'cash'));
+select pg_temp.check('coach-recorded package adds credits straight away',
+  (select sessions_left from public.player_balances where name = 'New Kid') = 5);
+select pg_temp.check('coach-recorded package awaits payment check',
+  (select payment_status from public.credit_ledger where reason = 'Bought 5 pack after assessment') = 'awaiting');
+do $$ begin
+  begin
+    insert into public.credit_ledger (player_id, kind, sessions_delta, reason, payment_status)
+    values ('00000000-0000-0000-0000-0000000000b9', 'free', 1, 'free one', 'confirmed');
+    perform pg_temp.check('coach cannot give free sessions', false);
+  exception when others then perform pg_temp.check('coach cannot give free sessions', true);
+  end;
+end $$;
+with u as (update public.credit_ledger set payment_status = 'confirmed' where reason = 'Bought 5 pack after assessment' returning 1)
+select pg_temp.check('coach cannot confirm a package payment', (select count(*) from u) = 0);
+select pg_temp.check('coach cannot see the payments to confirm', (select count(*) from public.payments_to_confirm) = 0);
+
 -- ---------- stranger (logged in, not a coach) ----------
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a9';
 select pg_temp.check('non-coach login sees no players', (select count(*) from public.players) = 0);
@@ -166,13 +221,35 @@ do $$ begin
   end;
 end $$;
 select pg_temp.check('ledger records who made the change',
-  (select created_by from public.credit_ledger where kind='purchase') = '00000000-0000-0000-0000-0000000000a1');
+  (select created_by from public.credit_ledger where kind='purchase' and reason='Bought 5 pack') = '00000000-0000-0000-0000-0000000000a1');
 select pg_temp.check('regular player with no session last week is flagged',
   exists (select 1 from public.missing_sessions where name='Regular Ray'), (select string_agg(name, ',') from public.missing_sessions));
 select pg_temp.check('a player who trained this week is not flagged',
   not exists (select 1 from public.missing_sessions where name='Alpha Pack'));
 select pg_temp.check('low-volume players are not flagged',
   not exists (select 1 from public.missing_sessions where name='Alpha Pack'));
+
+-- ---------- payment checks (as Jan) ----------
+select pg_temp.check('Jan sees the assessment and the package to confirm',
+  (select count(*) from public.payments_to_confirm where name = 'New Kid') = 2);
+select pg_temp.check('Jan sees the cash session to confirm, at the player''s price',
+  (select amount from public.payments_to_confirm where what = 'Session paid in cash') = 130);
+select pg_temp.check('the weekly payer owes nothing extra for the cash session',
+  (select coalesce(sum(sessions), 0) from public.payg_weeks where name = 'Charlie Weekly') = 1);
+update public.sessions set payment_status = 'confirmed' where payment_method = 'cash';
+update public.sessions set payment_status = 'confirmed' where format = 'assessment';
+update public.credit_ledger set payment_status = 'confirmed' where reason = 'Bought 5 pack after assessment';
+select pg_temp.check('confirming clears the list', (select count(*) from public.payments_to_confirm) = 0);
+select pg_temp.check('confirmation records who and when',
+  (select confirmed_by = '00000000-0000-0000-0000-0000000000a1' and confirmed_at is not null
+     from public.credit_ledger where reason = 'Bought 5 pack after assessment'));
+do $$ begin
+  begin
+    update public.credit_ledger set sessions_delta = 50 where reason = 'Bought 5 pack after assessment';
+    perform pg_temp.check('nobody can rewrite credit history', false);
+  exception when others then perform pg_temp.check('nobody can rewrite credit history', true);
+  end;
+end $$;
 
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;

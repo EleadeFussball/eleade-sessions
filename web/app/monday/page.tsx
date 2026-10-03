@@ -10,6 +10,9 @@ type Missing = { player_id: string; name: string; main_coach_id: string | null; 
 type Late = { session_id: string; session_date: string; logged_on: string; coach_name: string; days_late: number };
 type Payg = { player_id: string; name: string; week_start: string; sessions: number; owed: number; paid: number; outstanding: number };
 type Pay = { coach_name: string; pay: number | null; outcome: string };
+type ToConfirm = { kind: 'session' | 'package'; item_id: string; player_id: string; name: string; item_date: string;
+  what: string; amount: number | null; payment_method: string | null; recorded_by: string | null };
+const METHOD: Record<string, string> = { stripe: 'Stripe link', bank: 'bank transfer', cash: 'cash', other: 'other' };
 
 export default function MondayPage() {
   const { isAdmin, coaches } = useAuth();
@@ -20,16 +23,19 @@ export default function MondayPage() {
   const [payg, setPayg] = useState<Payg[]>([]);
   const [pay, setPay] = useState<Pay[]>([]);
   const [unconfirmed, setUnconfirmed] = useState(0);
+  const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
   const [err, setErr] = useState('');
 
   const load = useCallback(async () => {
-    const [b, m, l, g, p] = await Promise.all([
+    const [b, m, l, g, p, c] = await Promise.all([
       supabase.from('player_balances').select('*').eq('active', true).eq('billing_model', 'package').order('sessions_left'),
       supabase.from('missing_sessions').select('*').order('name'),
       supabase.from('late_logs').select('*').gte('session_date', addDays(lastWeek, -7)).order('session_date', { ascending: false }),
       supabase.from('payg_weeks').select('*').gt('outstanding', 0).order('week_start', { ascending: false }),
       supabase.from('coach_pay').select('coach_name, pay, outcome').gte('session_date', lastWeek).lte('session_date', addDays(lastWeek, 6)),
+      supabase.from('payments_to_confirm').select('*').order('item_date', { ascending: false }),
     ]);
+    setToConfirm((c.data as ToConfirm[]) ?? []);
     const all = (b.data as PlayerBalance[]) ?? [];
     // one line per family for renewals
     const seen = new Set<string>();
@@ -39,11 +45,19 @@ export default function MondayPage() {
     setUnconfirmed(all.filter((x) => !x.opening_confirmed).length);
     setMissing((m.data as Missing[]) ?? []); setLate((l.data as Late[]) ?? []);
     setPayg((g.data as Payg[]) ?? []); setPay((p.data as Pay[]) ?? []);
-    const e = [b, m, l, g, p].find((x) => x.error); if (e?.error) setErr(e.error.message);
+    const e = [b, m, l, g, p, c].find((x) => x.error); if (e?.error) setErr(e.error.message);
   }, [lastWeek]);
 
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
   if (!isAdmin) return <p className="empty">This page is for Jan.</p>;
+
+  async function confirmItem(r: ToConfirm) {
+    const q = r.kind === 'session'
+      ? supabase.from('sessions').update({ payment_status: 'confirmed' }).eq('id', r.item_id)
+      : supabase.from('credit_ledger').update({ payment_status: 'confirmed' }).eq('id', r.item_id);
+    const { error } = await q;
+    if (error) setErr(errorText(error)); else load();
+  }
 
   async function markPaid(r: Payg) {
     const { error } = await supabase.from('payments').insert({ player_id: r.player_id, week_start: r.week_start, amount: r.outstanding });
@@ -60,6 +74,22 @@ export default function MondayPage() {
       <p className="muted">Last week: {fmtWeek(lastWeek)}</p>
       {err && <div className="notice err">{err}</div>}
       {unconfirmed > 0 && <div className="notice warn">{unconfirmed} package players still have an unconfirmed starting balance. Confirm them on each player page.</div>}
+
+      <h2>Payments to confirm ({toConfirm.length})</h2>
+      <p className="hint">Assessments, cash sessions and packages the coaches recorded. Check Stripe, your bank account or the cash you collected, then confirm.</p>
+      {toConfirm.length === 0 ? <p className="empty">Nothing to confirm.</p> : (
+        <table className="t">
+          <thead><tr><th>Player</th><th>What</th><th className="n">Amount</th><th></th></tr></thead>
+          <tbody>{toConfirm.map((r) => (
+            <tr key={r.kind + r.item_id}>
+              <td><Link href={`/players/${r.player_id}`}>{r.name}</Link><br /><span className="hint">{fmtDate(r.item_date)}{r.recorded_by ? `, by ${r.recorded_by}` : ''}</span></td>
+              <td>{r.what}<br /><span className="hint">{r.payment_method ? `Coach says: ${METHOD[r.payment_method] ?? r.payment_method}` : 'Not paid yet'}</span></td>
+              <td className="n">{money(r.amount)}</td>
+              <td className="n"><button className="btn small ghost" type="button" onClick={() => confirmItem(r)}>Confirm paid</button></td>
+            </tr>
+          ))}</tbody>
+        </table>
+      )}
 
       <h2>Renewals: 2 or fewer sessions left ({low.length})</h2>
       {low.length === 0 ? <p className="empty">Nobody is running low.</p> : (

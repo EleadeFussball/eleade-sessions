@@ -6,12 +6,18 @@ import { useAuth } from '@/lib/auth';
 import { usePlayers } from '@/lib/usePlayers';
 import { PlayerPicker } from '@/components/PlayerPicker';
 import { todayISO, addDays, fmtDate, num } from '@/lib/dates';
-import { FORMAT_LABEL, OUTCOME_LABEL, OUTCOME_HINT, MAX_PLAYERS, type Format, type Outcome, type PlayerBalance } from '@/lib/types';
+import { FORMAT_LABEL, OUTCOME_LABEL, OUTCOME_HINT, MAX_PLAYERS, PAYMENT_LABEL, type Format, type Outcome, type PaymentMethod, type PlayerBalance } from '@/lib/types';
 
-const FORMATS: Format[] = ['1:1', '2:1', '4:1', 'analysis', 'testing'];
+const FORMATS: Format[] = ['1:1', '2:1', '4:1', 'analysis', 'assessment', 'testing'];
+const ASSESSMENT_HINT: Record<Outcome, string> = {
+  attended: 'Charged $130, coach paid',
+  cancelled_in_time: '12+ hours notice: free, not paid',
+  cancelled_late: 'Charged $130, coach paid',
+  no_show: 'Charged $130, coach paid',
+};
 const OUTCOMES: Outcome[] = ['attended', 'cancelled_in_time', 'cancelled_late', 'no_show'];
 
-type Saved = { names: string[]; date: string; outcome: Outcome; after: PlayerBalance[] };
+type Saved = { names: string[]; date: string; outcome: Outcome; format: Format; after: PlayerBalance[] };
 
 export default function LogPage() {
   const { coach, coaches, isAdmin } = useAuth();
@@ -26,7 +32,9 @@ export default function LogPage() {
   const [topic, setTopic] = useState('');
   const [obs, setObs] = useState('');
   const [improve, setImprove] = useState('');
+  const [payMethod, setPayMethod] = useState<PaymentMethod | ''>('');
   const [locations, setLocations] = useState<string[]>([]);
+  const [locOpen, setLocOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [saved, setSaved] = useState<Saved | null>(null);
@@ -45,9 +53,15 @@ export default function LogPage() {
       });
   }, []);
 
+  const locQuery = location.trim().toLowerCase();
+  const locMatches = locQuery
+    ? locations.filter((l) => l.toLowerCase() !== locQuery &&
+        (l.toLowerCase().startsWith(locQuery) || l.toLowerCase().split(/\s+/).some((w) => w.startsWith(locQuery)))).slice(0, 6)
+    : locations.slice(0, 6);
   const max = MAX_PLAYERS[format];
   const chosen = ids.map((id) => players.find((p) => p.player_id === id)).filter(Boolean) as PlayerBalance[];
-  const empty = chosen.filter((p) => p.billing_model === 'package' && Number(p.sessions_left ?? 0) <= 0);
+  const isAssessment = format === 'assessment';
+  const empty = isAssessment ? [] : chosen.filter((p) => p.billing_model === 'package' && Number(p.sessions_left ?? 0) <= 0);
   const showNotes = outcome === 'attended';
 
   function pickFormat(f: Format) {
@@ -55,26 +69,41 @@ export default function LogPage() {
     if (ids.length > MAX_PLAYERS[f]) setIds(ids.slice(0, MAX_PLAYERS[f]));
   }
 
+  async function addPlayer(name: string) {
+    setErr('');
+    const { data, error } = await supabase.from('players')
+      .insert({ name, main_coach_id: coach?.id ?? null }).select('id').single();
+    if (error) {
+      setErr(error.message.includes('duplicate') ? `A player called ${name} already exists. Search for them instead.` : errorText(error));
+      return;
+    }
+    await reload();
+    const id = (data as { id: string }).id;
+    setIds(max === 1 ? [id] : [...ids, id]);
+  }
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setErr('');
     if (!ids.length) { setErr('Pick the player first.'); return; }
     if ((format === '2:1' || format === '4:1') && ids.length < 2) { setErr(`A ${format} session needs at least 2 players.`); return; }
+    if (time.trim() && !normaliseTime(time)) { setErr('Start time not recognised. Type it like 630, 6:30 or 1800.'); return; }
     setBusy(true);
     const { error } = await supabase.rpc('log_session', {
       p_session_date: date, p_coach_id: coachId || coach!.id, p_format: format, p_outcome: outcome,
-      p_player_ids: ids, p_location: location.trim() || null, p_start_time: time || null,
+      p_player_ids: ids, p_location: location.trim() || null, p_start_time: normaliseTime(time) || null,
       p_topic: showNotes ? topic.trim() || null : null,
       p_observations: obs.trim() || null,
       p_improve: showNotes ? improve.trim() || null : null,
+      p_payment_method: payMethod && (isAssessment || payMethod === 'cash') && outcome !== 'cancelled_in_time' ? payMethod : null,
     });
     setBusy(false);
     if (error) { setErr(errorText(error)); return; }
     const names = chosen.map((p) => p.name);
     const { data } = await supabase.from('player_balances').select('*').in('player_id', ids);
-    setSaved({ names, date, outcome, after: (data as PlayerBalance[]) ?? [] });
+    setSaved({ names, date, outcome, format, after: (data as PlayerBalance[]) ?? [] });
     reload();
-    setIds([]); setTopic(''); setObs(''); setImprove(''); setOutcome('attended'); setTime('');
+    setIds([]); setTopic(''); setObs(''); setImprove(''); setOutcome('attended'); setTime(''); setPayMethod('');
     window.scrollTo({ top: 0 });
   }
 
@@ -83,8 +112,13 @@ export default function LogPage() {
       <h1>Log a session</h1>
       {saved && (
         <div className="notice ok" role="status">
-          <strong>Session logged.</strong> {saved.names.join(' and ')}, {fmtDate(saved.date, true)}, {OUTCOME_LABEL[saved.outcome].toLowerCase()}.
-          {saved.after.map((p) => (
+          <strong>{saved.format === 'assessment' ? 'Assessment logged.' : 'Session logged.'}</strong> {saved.names.join(' and ')}, {fmtDate(saved.date, true)}, {OUTCOME_LABEL[saved.outcome].toLowerCase()}.
+          {saved.format === 'assessment' ? (
+            <div>
+              Jan will check the $130 payment. If the parents buy a package, record it on{' '}
+              {saved.after.map((p) => <Link key={p.player_id} href={`/players/${p.player_id}`}>{p.name}&apos;s page</Link>)}.
+            </div>
+          ) : saved.after.map((p) => (
             <div key={p.player_id}>
               {p.name}: {p.billing_model === 'package' ? `${num(p.sessions_left)} ${Number(p.sessions_left) === 1 ? 'session' : 'sessions'} left` : 'pays weekly'}
               {p.billing_model === 'package' && Number(p.sessions_left) <= 2 && ' (Jan will contact the parents about renewing)'}
@@ -114,7 +148,7 @@ export default function LogPage() {
 
         <div className="field">
           <span className="fieldlabel">{max === 1 ? 'Player' : `Players (up to ${max})`}</span>
-          <PlayerPicker players={players} selected={ids} max={max} onChange={setIds} />
+          <PlayerPicker players={players} selected={ids} max={max} onChange={setIds} onCreate={addPlayer} />
           {empty.length > 0 && (
             <div className="notice warn">
               {empty.map((p) => p.name).join(' and ')} {empty.length > 1 ? 'have' : 'has'} no credits left. You can still log the session. Jan will follow up with the parents.
@@ -123,25 +157,61 @@ export default function LogPage() {
         </div>
 
         <div className="field">
-          <span className="fieldlabel">What happened</span>
+          <span className="fieldlabel">Session confirmation &amp; payment</span>
           <div className="seg outcomes">
             {OUTCOMES.map((o) => (
               <button key={o} type="button" aria-pressed={outcome === o} onClick={() => setOutcome(o)}>
-                {OUTCOME_LABEL[o]}<small>{OUTCOME_HINT[o]}</small>
+                {OUTCOME_LABEL[o]}<small>{isAssessment ? ASSESSMENT_HINT[o] : OUTCOME_HINT[o]}</small>
               </button>
             ))}
           </div>
         </div>
 
+        {isAssessment && outcome !== 'cancelled_in_time' && (
+          <div className="field">
+            <span className="fieldlabel">How did the parents pay the $130? <span className="hint">(Jan confirms it)</span></span>
+            <div className="seg">
+              {(['stripe', 'bank', 'cash'] as PaymentMethod[]).map((m) => (
+                <button key={m} type="button" aria-pressed={payMethod === m} onClick={() => setPayMethod(payMethod === m ? '' : m)}>{m === 'cash' ? 'Paid cash' : PAYMENT_LABEL[m]}</button>
+              ))}
+              <button type="button" aria-pressed={payMethod === ''} onClick={() => setPayMethod('')}>Not paid yet</button>
+            </div>
+          </div>
+        )}
+        {!isAssessment && outcome !== 'cancelled_in_time' && format !== 'testing' && (
+          <div className="field">
+            <div className="seg">
+              <button type="button" aria-pressed={payMethod === 'cash'} onClick={() => setPayMethod(payMethod === 'cash' ? '' : 'cash')}>
+                Paid cash
+              </button>
+            </div>
+            <p className="hint mt">
+              {payMethod === 'cash'
+                ? 'Paid in cash today: no package credit is used and it isn’t added to a weekly transfer. Jan confirms the cash.'
+                : 'Tap if the parents paid you in cash for this session.'}
+            </p>
+          </div>
+        )}
+
         <div className="row">
-          <label className="field">
-            <span>Location</span>
-            <input type="text" list="locations" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Moore Park" />
-            <datalist id="locations">{locations.map((l) => <option key={l} value={l} />)}</datalist>
-          </label>
-          <label className="field" style={{ flex: '0 0 120px' }}>
+          <div className="field" style={{ position: 'relative' }}>
+            <label htmlFor="loc" className="fieldlabel">Location</label>
+            <input id="loc" type="text" autoComplete="off" value={location} placeholder="e.g. Moore Park"
+                   onChange={(e) => { setLocation(e.target.value); setLocOpen(true); }}
+                   onFocus={() => setLocOpen(true)} onBlur={() => setTimeout(() => setLocOpen(false), 150)} />
+            {locOpen && locMatches.length > 0 && (
+              <ul className="results" role="listbox" aria-label="Locations">
+                {locMatches.map((l) => (
+                  <li key={l}><button type="button" onMouseDown={(e) => e.preventDefault()}
+                                      onClick={() => { setLocation(l); setLocOpen(false); }}>{l}</button></li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <label className="field" style={{ flex: '0 0 110px' }}>
             <span>Start</span>
-            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+            <input type="text" inputMode="numeric" value={time} placeholder="e.g. 630" maxLength={5}
+                   onChange={(e) => setTime(e.target.value)} onBlur={() => setTime(normaliseTime(time))} />
           </label>
         </div>
 
@@ -183,4 +253,18 @@ export default function LogPage() {
       </form>
     </>
   );
+}
+
+/** '630' -> '06:30', '6.30' -> '06:30', '1800' -> '18:00', '7' -> '07:00'. Empty or invalid -> ''. */
+function normaliseTime(raw: string): string {
+  const t = raw.trim().replace(/[.,h ]/g, ':');
+  if (!t) return '';
+  let h: number, m: number;
+  const parts = t.split(':').filter(Boolean);
+  if (parts.length === 2) { h = Number(parts[0]); m = Number(parts[1]); }
+  else if (/^\d{1,2}$/.test(t)) { h = Number(t); m = 0; }
+  else if (/^\d{3,4}$/.test(t)) { h = Number(t.slice(0, t.length - 2)); m = Number(t.slice(-2)); }
+  else return '';
+  if (!Number.isInteger(h) || !Number.isInteger(m) || h > 23 || m > 59 || h < 0 || m < 0) return '';
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }

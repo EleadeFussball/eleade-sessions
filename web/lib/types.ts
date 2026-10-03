@@ -1,4 +1,5 @@
-export type Format = '1:1' | '2:1' | '4:1' | 'analysis' | 'testing';
+export type Format = '1:1' | '2:1' | '4:1' | 'analysis' | 'testing' | 'assessment';
+export type PaymentMethod = 'stripe' | 'bank' | 'cash' | 'other';
 export type Outcome = 'attended' | 'cancelled_in_time' | 'cancelled_late' | 'no_show';
 export type BillingModel = 'package' | 'pay_per_session';
 
@@ -39,6 +40,8 @@ export type SessionRow = {
   observations: string | null;
   improve: string | null;
   imported: boolean;
+  payment_status: 'awaiting' | 'confirmed' | null;
+  payment_method: PaymentMethod | null;
   logged_by: string | null;
   logged_at: string;
   session_players?: { player_id: string; players?: { name: string } | null }[];
@@ -50,6 +53,14 @@ export const FORMAT_LABEL: Record<Format, string> = {
   '4:1': '4:1 group',
   analysis: 'Game analysis',
   testing: 'Testing',
+  assessment: 'Assessment',
+};
+
+export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
+  stripe: 'Stripe link',
+  bank: 'Bank transfer',
+  cash: 'Cash',
+  other: 'Other',
 };
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
@@ -66,4 +77,4 @@ export const OUTCOME_HINT: Record<Outcome, string> = {
   no_show: 'Uses a credit, coach paid',
 };
 
-export const MAX_PLAYERS: Record<Format, number> = { '1:1': 1, '2:1': 2, '4:1': 4, analysis: 1, testing: 12 };
+export const MAX_PLAYERS: Record<Format, number> = { '1:1': 1, '2:1': 2, '4:1': 4, analysis: 1, testing: 12, assessment: 1 };

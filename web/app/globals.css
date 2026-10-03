@@ -42,7 +42,7 @@ p { margin: 0 0 .75rem; }
   padding: 14px 16px 10px; max-width: 760px; margin: 0 auto;
 }
 .brand { font: 700 1.6rem/1 var(--score); color: var(--turf); text-decoration: none; letter-spacing: .01em; }
-.who { color: var(--muted); font-size: .95rem; }
+.who { color: var(--muted); font-size: .95rem; text-decoration: none; padding: 8px 0 8px 12px; }
 .page { max-width: 760px; margin: 0 auto; padding: 4px 16px 32px; }
 .page.narrow { max-width: 440px; padding-top: 48px; }
 

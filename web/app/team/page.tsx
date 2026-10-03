@@ -4,9 +4,9 @@ import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import type { Coach } from '@/lib/types';
 
-type Rates = { coach_id: string; one_to_one: number | null; two_to_one: number; four_to_one: number; analysis: number; testing: number };
+type Rates = { coach_id: string; one_to_one: number | null; two_to_one: number; four_to_one: number; analysis: number; testing: number; assessment: number | null };
 const RATE_FIELDS: [keyof Omit<Rates, 'coach_id'>, string][] = [
-  ['one_to_one', '1:1'], ['two_to_one', '2:1'], ['four_to_one', '4:1'], ['analysis', 'Analysis'], ['testing', 'Testing'],
+  ['one_to_one', '1:1'], ['two_to_one', '2:1'], ['four_to_one', '4:1'], ['analysis', 'Analysis'], ['assessment', 'Assessment'], ['testing', 'Testing'],
 ];
 
 export default function TeamPage() {
@@ -36,7 +36,7 @@ export default function TeamPage() {
   return (
     <>
       <h1>Team</h1>
-      <p className="muted">Coaches sign in with the email you enter here. Rates are per session, ex GST, and only you and that coach can see them.</p>
+      <p className="muted">Coaches sign in with the email you enter here. Rates are per session, ex GST, and only you and that coach can see them. A blank assessment rate pays the coach&apos;s 1:1 rate.</p>
       {msg && <div className="notice ok">{msg}</div>}
       {err && <div className="notice err">{err}</div>}
       <ul className="list">
@@ -68,7 +68,7 @@ function CoachRow({ c, r, onSaved, onError }: { c: Coach; r?: Rates; onSaved: (m
     e.preventDefault();
     const c1 = await supabase.from('coaches').update({ email: email.trim().toLowerCase() || null, active }).eq('id', c.id);
     if (c1.error) { onError(errorText(c1.error)); return; }
-    const body = Object.fromEntries(RATE_FIELDS.map(([k]) => [k, vals[k] === '' ? (k === 'one_to_one' ? null : 0) : Number(vals[k])]));
+    const body = Object.fromEntries(RATE_FIELDS.map(([k]) => [k, vals[k] === '' ? (k === 'one_to_one' || k === 'assessment' ? null : 0) : Number(vals[k])]));
     const c2 = await supabase.from('coach_rates').upsert({ coach_id: c.id, ...body, updated_at: new Date().toISOString() });
     if (c2.error) { onError(errorText(c2.error)); return; }
     onSaved(`${c.name} saved.`);

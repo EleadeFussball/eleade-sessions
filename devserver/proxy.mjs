@@ -24,7 +24,8 @@ const cors = {
   'access-control-expose-headers': 'content-range, content-profile',
 };
 function json(res, code, obj) { res.writeHead(code, { ...cors, 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); }
-function user(email) { return { id: USERS[email], email, aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() }; }
+const META = {};  // user_metadata per email, kept in memory for local testing
+function user(email) { return { id: USERS[email], email, aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: META[email] || {}, created_at: new Date().toISOString() }; }
 
 http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
@@ -36,7 +37,16 @@ http.createServer((req, res) => {
   }
   if (url.pathname === '/auth/v1/user') {
     const t = (req.headers.authorization || '').replace('Bearer ', '');
-    try { return json(res, 200, user(decode(t).email)); } catch { return json(res, 401, { msg: 'bad token' }); }
+    let email; try { email = decode(t).email; } catch { return json(res, 401, { msg: 'bad token' }); }
+    if (req.method === 'PUT') {
+      let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => {
+        const body = JSON.parse(b || '{}');
+        if (body.data) META[email] = { ...(META[email] || {}), ...body.data };
+        json(res, 200, user(email));
+      });
+      return;
+    }
+    return json(res, 200, user(email));
   }
   if (url.pathname === '/auth/v1/token') {
     let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => {

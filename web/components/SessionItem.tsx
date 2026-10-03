@@ -46,6 +46,16 @@ export function SessionItem({ s, onChanged, showPlayers = false }: { s: SessionR
       <div className="sub">
         {FORMAT_LABEL[s.format]}, {coachName}{s.location ? `, ${s.location}` : ''}{s.imported ? ', from old documentation' : ''}
       </div>
+      {s.payment_status && (
+        <div style={{ marginTop: 4 }}>
+          {(() => {
+            const what = s.payment_method === 'cash' ? 'Cash payment' : s.format === 'assessment' ? '$130 payment' : 'Payment';
+            return s.payment_status === 'awaiting'
+              ? <span className="tag amber">{what} to check</span>
+              : <span className="tag turf">{what} checked</span>;
+          })()}
+        </div>
+      )}
       {!editing ? (
         <>
           {(s.topic || s.observations || s.improve) && (

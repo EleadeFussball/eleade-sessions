@@ -40,9 +40,16 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="app">
       <header className="topbar">
         <Link href="/log" className="brand">eleade</Link>
-        <span className="who">{coach.name}</span>
+        <Link href="/account" className="who" aria-label="Account and password">{coach.name}</Link>
       </header>
-      <main className="page">{children}</main>
+      <main className="page">
+        {!session.user.user_metadata?.password_set && path !== '/account' && (
+          <div className="notice warn">
+            Set a password so you can sign in without waiting for an email. <Link href="/account">Set password</Link>
+          </div>
+        )}
+        {children}
+      </main>
       <nav className="tabs" aria-label="Main">
         {TABS.filter((t) => !t.admin || isAdmin).map((t) => (
           <Link key={t.href} href={t.href} className={path.startsWith(t.href) ? 'tab on' : 'tab'}
