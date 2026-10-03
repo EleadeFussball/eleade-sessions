@@ -12,8 +12,7 @@ begin
   new.name := regexp_replace(trim(new.name), '\s+', ' ', 'g');
   return new;
 end $$;
-drop trigger if exists players_stamp on public.players;
-create trigger players_stamp before insert on public.players
+create or replace trigger players_stamp before insert on public.players
   for each row execute function public.players_stamp();
 revoke execute on function public.players_stamp() from public, anon, authenticated;
 
