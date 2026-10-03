@@ -52,7 +52,7 @@ export default function LoginPage() {
     <main className="page narrow">
       <img src="/eleade-logo.svg" alt="eleade" className="login-logo" />
       <p className="claim">Football knowledge made in Germany</p>
-      <h1 style={{ fontSize: '1.5rem' }}>Coach sign in</h1>
+      <h1 style={{ fontSize: '1.5rem' }}>Sign in to eleade Hub</h1>
 
       {mode === 'password' ? (
         <form onSubmit={signIn} className="mt">

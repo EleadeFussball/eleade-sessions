@@ -6,9 +6,9 @@ import '@fontsource-variable/league-spartan';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Eleade Sessions',
+  title: 'eleade Hub',
   description: 'Session logging, player credits and coach pay for Eleade.',
-  appleWebApp: { capable: true, title: 'Eleade', statusBarStyle: 'black' },
+  appleWebApp: { capable: true, title: 'eleade Hub', statusBarStyle: 'black' },
 };
 
 export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#141414' };

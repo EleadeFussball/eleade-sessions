@@ -3,8 +3,8 @@ import type { MetadataRoute } from 'next';
 // Android home-screen icon and name (iPhones use app/apple-icon.png).
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Eleade Sessions',
-    short_name: 'Eleade',
+    name: 'eleade Hub',
+    short_name: 'eleade Hub',
     start_url: '/log',
     display: 'standalone',
     background_color: '#FAFAF8',

@@ -30,7 +30,7 @@ export default function InvoicePage() {
 
   useEffect(() => {
     if (inv) document.title = `Invoice ${invoiceNo(inv)}`;
-    return () => { document.title = 'Eleade sessions'; };
+    return () => { document.title = 'eleade Hub'; };
   }, [inv]);
 
   if (!loaded) return <p className="empty">Loading</p>;
