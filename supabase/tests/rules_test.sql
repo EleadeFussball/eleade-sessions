@@ -145,6 +145,24 @@ select pg_temp.check('coach can add a profile note', (select count(*) from publi
 insert into public.players (id, name, main_coach_id) values
   ('00000000-0000-0000-0000-0000000000b9', 'New Kid', '00000000-0000-0000-0000-0000000000c2');
 select pg_temp.check('coach can add a new player', exists (select 1 from public.players where name = 'New Kid'));
+insert into public.players (name) values ('  Typo   nme ');
+select pg_temp.check('new player names are tidied', exists (select 1 from public.players where name = 'Typo nme'));
+select public.rename_player((select id from public.players where name = 'Typo nme'), 'Typo Name');
+select pg_temp.check('coach can rename a player they added', exists (select 1 from public.players where name = 'Typo Name'));
+select public.delete_player((select id from public.players where name = 'Typo Name'));
+select pg_temp.check('coach can delete a player they added by mistake', not exists (select 1 from public.players where name = 'Typo Name'));
+do $$ begin
+  begin
+    perform public.rename_player('00000000-0000-0000-0000-0000000000b1', 'Someone Else');
+    perform pg_temp.check('coach cannot rename a player someone else added', false);
+  exception when others then perform pg_temp.check('coach cannot rename a player someone else added', true);
+  end;
+  begin
+    perform public.rename_player('00000000-0000-0000-0000-0000000000b9', 'alpha pack');
+    perform pg_temp.check('renaming to an existing name is refused', false);
+  exception when others then perform pg_temp.check('renaming to an existing name is refused', true);
+  end;
+end $$;
 do $$ begin
   begin
     insert into public.players (name, opening_confirmed) values ('Sneaky', true);
@@ -172,6 +190,13 @@ do $$ begin
   end;
 end $$;
 
+do $$ begin
+  begin
+    perform public.delete_player('00000000-0000-0000-0000-0000000000b9');
+    perform pg_temp.check('a player with sessions cannot be deleted', false);
+  exception when others then perform pg_temp.check('a player with sessions cannot be deleted', true, sqlerrm);
+  end;
+end $$;
 insert into public.credit_ledger (player_id, kind, sessions_delta, analyses_delta, package_name, amount_paid, payment_method, reason)
   values ('00000000-0000-0000-0000-0000000000b9', 'purchase', 5, 0, '5 pack', 650, 'stripe', 'Bought 5 pack after assessment');
 select public.log_session(public.today_sydney() - 2, '00000000-0000-0000-0000-0000000000c2', '1:1', 'attended',
@@ -248,6 +273,16 @@ do $$ begin
     update public.credit_ledger set sessions_delta = 50 where reason = 'Bought 5 pack after assessment';
     perform pg_temp.check('nobody can rewrite credit history', false);
   exception when others then perform pg_temp.check('nobody can rewrite credit history', true);
+  end;
+end $$;
+
+select public.rename_player('00000000-0000-0000-0000-0000000000b3', 'Echo Sibling');
+select pg_temp.check('Jan can rename any player', exists (select 1 from public.players where name = 'Echo Sibling'));
+do $$ begin
+  begin
+    perform public.delete_player('00000000-0000-0000-0000-0000000000b1');
+    perform pg_temp.check('even Jan cannot delete a player with history', false);
+  exception when others then perform pg_temp.check('even Jan cannot delete a player with history', true);
   end;
 end $$;
 

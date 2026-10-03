@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -12,6 +12,7 @@ import { PAYMENT_LABEL, type PaymentMethod, type PlayerBalance, type SessionRow 
 type Player = {
   id: string; name: string; family: string | null; billing_model: 'package' | 'pay_per_session';
   session_price: number | null; main_coach_id: string | null; active: boolean; opening_confirmed: boolean; profile_notes: string | null;
+  created_by: string | null;
 };
 type Ledger = { id: string; kind: string; sessions_delta: number; analyses_delta: number; package_name: string | null;
   amount_paid: number | null; reason: string; effective_date: string; expires_on: string | null; player_id: string;
@@ -31,6 +32,9 @@ export default function PlayerPage() {
   const [noteText, setNoteText] = useState('');
   const [showOld, setShowOld] = useState(false);
   const [err, setErr] = useState('');
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const router = useRouter();
 
   const load = useCallback(async () => {
     const [pl, b, ss, lg, nt] = await Promise.all([
@@ -69,6 +73,19 @@ export default function PlayerPage() {
     const { error } = await supabase.from('player_notes').insert({ player_id: id, body: noteText.trim() });
     if (error) setErr(errorText(error)); else { setNoteText(''); load(); }
   }
+  async function saveName(e: React.FormEvent) {
+    e.preventDefault(); setErr('');
+    const { error } = await supabase.rpc('rename_player', { p_player_id: id, p_name: nameDraft });
+    if (error) setErr(errorText(error)); else { setEditingName(false); load(); }
+  }
+
+  async function deletePlayer() {
+    if (!p) return;
+    if (!window.confirm(`Delete ${p.name}? This can't be undone.`)) return;
+    const { error } = await supabase.rpc('delete_player', { p_player_id: id });
+    if (error) setErr(errorText(error)); else router.replace('/players');
+  }
+
   async function confirmPackage(ledgerId: string) {
     const { error } = await supabase.from('credit_ledger').update({ payment_status: 'confirmed' }).eq('id', ledgerId);
     if (error) setErr(errorText(error)); else load();
@@ -79,6 +96,7 @@ export default function PlayerPage() {
   }
 
   if (!p || !bal) return <p className="empty">{err || 'Loading player'}</p>;
+  const canManage = isAdmin || (!!p.created_by && p.created_by === session?.user.id);
   const coachName = (cid: string | null) => coaches.find((c) => c.id === cid)?.name ?? '';
   const live = sessions.filter((s) => !s.imported);
   const old = sessions.filter((s) => s.imported);
@@ -87,7 +105,21 @@ export default function PlayerPage() {
   return (
     <>
       <p><Link href="/players">Players</Link></p>
-      <h1>{p.name}</h1>
+      {err && editingName && <div className="notice err" role="alert">{err}</div>}
+      {editingName ? (
+        <form onSubmit={saveName} className="row" style={{ alignItems: 'flex-end', marginBottom: 12 }}>
+          <label className="field" style={{ marginBottom: 0 }}><span>Player name</span>
+            <input type="text" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} autoFocus /></label>
+          <button className="btn small" style={{ flex: '0 0 auto' }}>Save</button>
+          <button type="button" className="btn small ghost" style={{ flex: '0 0 auto' }} onClick={() => setEditingName(false)}>Cancel</button>
+        </form>
+      ) : (
+        <h1>
+          {p.name}{' '}
+          {canManage && <button type="button" className="linkbtn" style={{ fontSize: '1rem', fontFamily: 'var(--body)' }}
+                                onClick={() => { setNameDraft(p.name); setEditingName(true); }}>Edit name</button>}
+        </h1>
+      )}
       <p className="muted">
         {coachName(p.main_coach_id) ? `Main coach ${coachName(p.main_coach_id)}` : 'No main coach'}
         {p.family ? `. Shares credits with the ${p.family} family.` : ''}
@@ -173,6 +205,12 @@ export default function PlayerPage() {
 
       {p.billing_model === 'package' && <RecordPackage playerId={p.id} name={p.name} onSaved={load} />}
       {isAdmin && <AdminPanel p={p} onSaved={load} />}
+      {canManage && (
+        <p className="mt">
+          <button type="button" className="linkbtn" style={{ color: 'var(--red)' }} onClick={deletePlayer}>Delete this player</button>
+          <br /><span className="hint">Only possible while the player has no sessions and no credit history, for example a name added by mistake.</span>
+        </p>
+      )}
       {err && <div className="notice err">{err}</div>}
     </>
   );
