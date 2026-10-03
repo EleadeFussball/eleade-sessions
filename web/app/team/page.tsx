@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import type { Coach } from '@/lib/types';
+import { digits, validAbn } from '@/lib/bank';
 
 type Rates = { coach_id: string; one_to_one: number | null; two_to_one: number; four_to_one: number; analysis: number; testing: number; assessment: number | null };
 const RATE_FIELDS: [keyof Omit<Rates, 'coach_id'>, string][] = [
@@ -42,6 +43,7 @@ export default function TeamPage() {
       <ul className="list">
         {coaches.map((c) => <CoachRow key={c.id} c={c} r={rates[c.id]} onSaved={async (m) => { setMsg(m); setErr(''); await refreshCoaches(); load(); }} onError={setErr} />)}
       </ul>
+      <BusinessDetails />
       <details className="panel">
         <summary>Add a coach</summary>
         <form onSubmit={addCoach}>
@@ -59,6 +61,7 @@ export default function TeamPage() {
 function CoachRow({ c, r, onSaved, onError }: { c: Coach; r?: Rates; onSaved: (m: string) => void; onError: (m: string) => void }) {
   const [email, setEmail] = useState(c.email ?? '');
   const [active, setActive] = useState(c.active);
+  const [salaried, setSalaried] = useState(c.salaried);
   const [vals, setVals] = useState<Record<string, string>>({});
   useEffect(() => {
     if (r) setVals(Object.fromEntries(RATE_FIELDS.map(([k]) => [k, r[k] === null ? '' : String(r[k])])));
@@ -66,7 +69,7 @@ function CoachRow({ c, r, onSaved, onError }: { c: Coach; r?: Rates; onSaved: (m
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    const c1 = await supabase.from('coaches').update({ email: email.trim().toLowerCase() || null, active }).eq('id', c.id);
+    const c1 = await supabase.from('coaches').update({ email: email.trim().toLowerCase() || null, active, salaried }).eq('id', c.id);
     if (c1.error) { onError(errorText(c1.error)); return; }
     const body = Object.fromEntries(RATE_FIELDS.map(([k]) => [k, vals[k] === '' ? (k === 'one_to_one' || k === 'assessment' ? null : 0) : Number(vals[k])]));
     const c2 = await supabase.from('coach_rates').upsert({ coach_id: c.id, ...body, updated_at: new Date().toISOString() });
@@ -95,9 +98,82 @@ function CoachRow({ c, r, onSaved, onError }: { c: Coach; r?: Rates; onSaved: (m
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} style={{ width: 22, height: 22 }} />
             <span style={{ margin: 0 }}>Active</span>
           </label>
+          <label className="field" style={{ display: 'flex', gap: 10, alignItems: 'center', margin: 0 }}>
+            <input type="checkbox" checked={salaried} onChange={(e) => setSalaried(e.target.checked)} style={{ width: 22, height: 22 }} />
+            <span style={{ margin: 0 }}>Salaried (no invoices)</span>
+          </label>
           <button className="btn small" style={{ flex: '0 0 auto' }}>Save {c.name}</button>
         </div>
       </form>
     </li>
+  );
+}
+
+function BusinessDetails() {
+  const [name, setName] = useState('');
+  const [abn, setAbn] = useState('');
+  const [bsb, setBsb] = useState('');
+  const [acct, setAcct] = useState('');
+  const [acctName, setAcctName] = useState('');
+  const [userId, setUserId] = useState('000000');
+  const [remitter, setRemitter] = useState('ELEADE');
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    supabase.from('settings').select('key, value').in('key', ['business_name', 'business_abn']).then(({ data }) => {
+      for (const r of (data as { key: string; value: string }[]) ?? []) {
+        if (r.key === 'business_name') setName(r.value ?? ''); else setAbn(r.value ?? '');
+      }
+    });
+    supabase.from('bank_file_settings').select('*').maybeSingle().then(({ data }) => {
+      if (!data) return;
+      setBsb(data.bsb ?? ''); setAcct(data.account_number ?? ''); setAcctName(data.account_name ?? '');
+      setUserId(data.user_id_number ?? '000000'); setRemitter(data.remitter_name ?? 'ELEADE');
+    });
+  }, []);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault(); setErr(''); setMsg('');
+    const a = digits(abn), b = digits(bsb), n = digits(acct), u = digits(userId);
+    if (a && !validAbn(a)) { setErr('That ABN is not valid.'); return; }
+    if (b && b.length !== 6) { setErr('A BSB has 6 digits.'); return; }
+    if (n && (n.length < 4 || n.length > 9)) { setErr('An account number has 4 to 9 digits.'); return; }
+    if (u.length !== 6) { setErr('The User ID has 6 digits. Use 000000 if NAB has not given you one.'); return; }
+    const s1 = await supabase.from('settings').upsert([{ key: 'business_name', value: name.trim() || 'Eleade' }, { key: 'business_abn', value: a }]);
+    if (s1.error) { setErr(errorText(s1.error)); return; }
+    const s2 = await supabase.from('bank_file_settings').update({
+      bsb: b || null, account_number: n || null, account_name: acctName.trim() || null, user_id_number: u,
+      remitter_name: remitter.trim() || 'ELEADE', updated_at: new Date().toISOString(),
+    }).eq('id', true);
+    if (s2.error) { setErr(errorText(s2.error)); return; }
+    setAbn(a); setBsb(b); setAcct(n); setUserId(u);
+    setMsg('Saved.');
+  }
+
+  return (
+    <details className="panel">
+      <summary>Eleade details for invoices and the NAB payment file</summary>
+      <form onSubmit={save}>
+        <p className="hint">The business name and ABN appear as &quot;To&quot; on coach invoices. The account below is the one coaches are paid from; only you can see it.</p>
+        <div className="row">
+          <label className="field"><span>Business name</span><input type="text" value={name} onChange={(e) => setName(e.target.value)} /></label>
+          <label className="field"><span>ABN</span><input type="text" inputMode="numeric" value={abn} onChange={(e) => setAbn(e.target.value)} /></label>
+        </div>
+        <div className="row">
+          <label className="field" style={{ flex: '0 0 130px' }}><span>NAB BSB</span><input type="text" inputMode="numeric" value={bsb} onChange={(e) => setBsb(e.target.value)} /></label>
+          <label className="field"><span>Account number</span><input type="text" inputMode="numeric" value={acct} onChange={(e) => setAcct(e.target.value)} /></label>
+        </div>
+        <label className="field"><span>Account name</span><input type="text" value={acctName} onChange={(e) => setAcctName(e.target.value)} /></label>
+        <div className="row">
+          <label className="field"><span>Name on coaches&apos; statements</span><input type="text" maxLength={16} value={remitter} onChange={(e) => setRemitter(e.target.value)} /></label>
+          <label className="field" style={{ flex: '0 0 130px' }}><span>User ID</span><input type="text" inputMode="numeric" value={userId} onChange={(e) => setUserId(e.target.value)} /></label>
+        </div>
+        <p className="hint">Leave the User ID as 000000 unless NAB has given you a Direct Entry User ID.</p>
+        {err && <div className="notice err" role="alert">{err}</div>}
+        {msg && <div className="notice ok" role="status">{msg}</div>}
+        <button className="btn small">Save details</button>
+      </form>
+    </details>
   );
 }

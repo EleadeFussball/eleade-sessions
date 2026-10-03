@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { addDays, fmtDate, fmtWeek, money, num, todayISO, weekStart } from '@/lib/dates';
-import type { PlayerBalance } from '@/lib/types';
+import { invoiceNo, type CoachInvoice, type PlayerBalance } from '@/lib/types';
+import { buildAba, type AbaPayer } from '@/lib/bank';
 
 type Missing = { player_id: string; name: string; main_coach_id: string | null; last_logged: string | null };
 type Late = { session_id: string; session_date: string; logged_on: string; coach_name: string; days_late: number };
@@ -25,16 +26,22 @@ export default function MondayPage() {
   const [unconfirmed, setUnconfirmed] = useState(0);
   const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
   const [err, setErr] = useState('');
+  const [toPay, setToPay] = useState<CoachInvoice[]>([]);
+  const [bank, setBank] = useState<AbaPayer & { bsb: string | null; account_number: string | null; account_name: string | null } | null>(null);
 
   const load = useCallback(async () => {
-    const [b, m, l, g, p, c] = await Promise.all([
+    const [b, m, l, g, p, c, inv, bk] = await Promise.all([
       supabase.from('player_balances').select('*').eq('active', true).eq('billing_model', 'package').order('sessions_left'),
       supabase.from('missing_sessions').select('*').order('name'),
       supabase.from('late_logs').select('*').gte('session_date', addDays(lastWeek, -7)).order('session_date', { ascending: false }),
       supabase.from('payg_weeks').select('*').gt('outstanding', 0).order('week_start', { ascending: false }),
       supabase.from('coach_pay').select('coach_name, pay, outcome').gte('session_date', lastWeek).lte('session_date', addDays(lastWeek, 6)),
       supabase.from('payments_to_confirm').select('*').order('item_date', { ascending: false }),
+      supabase.from('coach_invoices').select('*').eq('status', 'submitted').order('coach_name').order('number'),
+      supabase.from('bank_file_settings').select('*').maybeSingle(),
     ]);
+    setToPay((inv.data as CoachInvoice[]) ?? []);
+    setBank(bk.data as typeof bank);
     setToConfirm((c.data as ToConfirm[]) ?? []);
     const all = (b.data as PlayerBalance[]) ?? [];
     // one line per family for renewals
@@ -45,7 +52,7 @@ export default function MondayPage() {
     setUnconfirmed(all.filter((x) => !x.opening_confirmed).length);
     setMissing((m.data as Missing[]) ?? []); setLate((l.data as Late[]) ?? []);
     setPayg((g.data as Payg[]) ?? []); setPay((p.data as Pay[]) ?? []);
-    const e = [b, m, l, g, p, c].find((x) => x.error); if (e?.error) setErr(e.error.message);
+    const e = [b, m, l, g, p, c, inv].find((x) => x.error); if (e?.error) setErr(e.error.message);
   }, [lastWeek]);
 
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
@@ -64,7 +71,31 @@ export default function MondayPage() {
     if (error) setErr(errorText(error)); else load();
   }
 
-  const payByCoach = pay.reduce<Record<string, number>>((m, r) => { m[r.coach_name] = (m[r.coach_name] ?? 0) + Number(r.pay ?? 0); return m; }, {});
+  async function markInvoicesPaid(ids: string[]) {
+    if (ids.length > 1 && !window.confirm(`Mark ${ids.length} invoices as paid?`)) return;
+    const { error } = await supabase.rpc('mark_invoices_paid', { p_ids: ids });
+    if (error) setErr(errorText(error)); else load();
+  }
+
+  const bankReady = !!(bank?.bsb && bank.account_number && bank.account_name);
+  function downloadBankFile() {
+    if (!bank || !bankReady) return;
+    try {
+      const text = buildAba(
+        { bsb: bank.bsb!, account_number: bank.account_number!, account_name: bank.account_name!, user_id_number: bank.user_id_number, remitter_name: bank.remitter_name },
+        toPay.map((i) => ({ bsb: i.bsb, account_number: i.account_number, account_name: i.account_name, amount: Number(i.total), reference: `ELEADE ${invoiceNo(i)}` })),
+        new Date(),
+      );
+      const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = `eleade-coach-pay-${todayISO()}.aba`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { setErr(errorText(e)); }
+  }
+  const toPayTotal = toPay.reduce((t, i) => t + Number(i.total), 0);
+
+  const salariedNames = new Set(coaches.filter((c) => c.salaried).map((c) => c.name));
+  const payByCoach = pay.filter((r) => !salariedNames.has(r.coach_name)).reduce<Record<string, number>>((m, r) => { m[r.coach_name] = (m[r.coach_name] ?? 0) + Number(r.pay ?? 0); return m; }, {});
   const payTotal = Object.values(payByCoach).reduce((a, b) => a + b, 0);
   const coachName = (id: string | null) => coaches.find((c) => c.id === id)?.name ?? '';
 
@@ -74,6 +105,33 @@ export default function MondayPage() {
       <p className="muted">Last week: {fmtWeek(lastWeek)}</p>
       {err && <div className="notice err">{err}</div>}
       {unconfirmed > 0 && <div className="notice warn">{unconfirmed} package players still have an unconfirmed starting balance. Confirm them on each player page.</div>}
+
+      <h2>Coach invoices to pay ({toPay.length})</h2>
+      {toPay.length === 0 ? <p className="empty">No invoices waiting.</p> : (
+        <>
+          <table className="t">
+            <thead><tr><th>Coach</th><th>Invoice</th><th className="n">Amount</th><th></th></tr></thead>
+            <tbody>{toPay.map((i) => (
+              <tr key={i.id}>
+                <td>{i.coach_name}</td>
+                <td><Link href={`/invoices/${i.id}`}>{invoiceNo(i)}</Link><br /><span className="hint">Week to {fmtDate(i.period_end)}</span></td>
+                <td className="n">{money(i.total)}</td>
+                <td className="n"><button className="btn small ghost" type="button" onClick={() => markInvoicesPaid([i.id])}>Mark paid</button></td>
+              </tr>
+            ))}</tbody>
+            <tfoot><tr><td>Total</td><td></td><td className="n">{money(toPayTotal)}</td><td></td></tr></tfoot>
+          </table>
+          {bankReady ? (
+            <div className="row">
+              <button className="btn small" type="button" onClick={downloadBankFile}>Download NAB payment file</button>
+              <button className="btn small ghost" type="button" onClick={() => markInvoicesPaid(toPay.map((i) => i.id))}>Mark all paid</button>
+            </div>
+          ) : (
+            <div className="notice warn">Add Eleade&apos;s paying account on the <Link href="/team">Team</Link> page to download a NAB payment file.</div>
+          )}
+          <p className="hint mt">In NAB Internet Banking on a computer, import the file as a multiple payment, check the total matches, and approve. Then tap Mark all paid.</p>
+        </>
+      )}
 
       <h2>Payments to confirm ({toConfirm.length})</h2>
       <p className="hint">Assessments, cash sessions and packages the coaches recorded. Check Stripe, your bank account or the cash you collected, then confirm.</p>
@@ -149,10 +207,10 @@ export default function MondayPage() {
           <tbody>{Object.entries(payByCoach).sort().map(([c, v]) => (
             <tr key={c}><td>{c}</td><td className="n">{money(v)}</td></tr>
           ))}</tbody>
-          <tfoot><tr><td>Total, ex GST</td><td className="n">{money(payTotal)}</td></tr></tfoot>
+          <tfoot><tr><td>Total</td><td className="n">{money(payTotal)}</td></tr></tfoot>
         </table>
       )}
-      <p className="hint mt">Each coach&apos;s line matches what they see under My week, so their invoice can be paid without checking.</p>
+      <p className="hint mt">Each coach&apos;s line matches what they see under My week, so their invoice can be paid without checking. Salaried staff are not listed.</p>
     </>
   );
 }

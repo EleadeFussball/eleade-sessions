@@ -10,6 +10,7 @@ export type Coach = {
   user_id: string | null;
   is_admin: boolean;
   active: boolean;
+  salaried: boolean;
 };
 
 export type PlayerBalance = {
@@ -78,3 +79,15 @@ export const OUTCOME_HINT: Record<Outcome, string> = {
 };
 
 export const MAX_PLAYERS: Record<Format, number> = { '1:1': 1, '2:1': 2, '4:1': 4, analysis: 1, testing: 12, assessment: 1 };
+
+export type CoachInvoice = {
+  id: string; coach_id: string; number: number; period_start: string; period_end: string; issued_on: string;
+  total: number; status: 'submitted' | 'paid'; coach_name: string; coach_legal_name: string; coach_abn: string;
+  bsb: string; account_number: string; account_name: string; business_name: string | null; business_abn: string | null;
+  submitted_at: string; paid_at: string | null;
+};
+
+export type InvoiceLine = { session_id: string | null; line_date: string; description: string; amount: number; is_correction: boolean; no_rate?: boolean };
+
+export const invoiceNo = (i: { coach_name: string; number: number }) =>
+  `${i.coach_name.toUpperCase().replace(/[^A-Z]/g, '')}-${String(i.number).padStart(4, '0')}`;

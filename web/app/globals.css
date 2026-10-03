@@ -172,3 +172,22 @@ details.panel[open] > summary { border-bottom: 1px solid var(--line); margin-bot
 .planned { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 14px 4px; margin: 0 0 24px; }
 .planned .list { border-top: 0; }
 .planned .list > li:last-child { border-bottom: 0; }
+
+/* ---------- coach invoice ---------- */
+.invoice { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
+.inv-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.inv-no { font-family: var(--score); font-size: 1.15rem; color: var(--muted); }
+.inv-meta { text-align: right; font-size: .95rem; }
+.inv-status { display: inline-block; margin-top: 4px; font-weight: 600; color: var(--amber); }
+.inv-status.paid { color: var(--turf); }
+.inv-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+.inv-label { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 2px; }
+.inv-pay { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--line); }
+@media (max-width: 480px) { .inv-meta { text-align: left; } .inv-parties { grid-template-columns: 1fr; } }
+@media print {
+  .topbar, .tabs, .no-print, .notice { display: none !important; }
+  body { background: #fff; }
+  .app { padding-bottom: 0; }
+  .page { padding: 0; max-width: none; }
+  .invoice { border: 0; padding: 0; }
+}

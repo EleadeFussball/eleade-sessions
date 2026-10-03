@@ -334,6 +334,117 @@ end $$;
 select public.rename_player('00000000-0000-0000-0000-0000000000b3', 'Echo Sibling');
 select pg_temp.check('Jan can rename any player', exists (select 1 from public.players where name = 'Echo Sibling'));
 
+-- ---------- coach invoices ----------
+reset role;
+create or replace function pg_temp.last_sun() returns date language sql stable as
+$$ select public.today_sydney() - extract(isodow from public.today_sydney())::int $$;
+update public.settings set value = to_jsonb((public.today_sydney() - 60)::text) where key = 'invoices_from';
+update public.coaches set salaried = true where name = 'Jani';
+insert into public.coaches (id, name, email) values ('00000000-0000-0000-0000-0000000000c4', 'David', 'david@test');
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a4', 'david@test');
+insert into public.coach_rates (coach_id, one_to_one, two_to_one) values ('00000000-0000-0000-0000-0000000000c4', 50, 70);
+insert into public.sessions (id, session_date, coach_id, format, outcome) values
+  ('00000000-0000-0000-0000-0000000d0001', pg_temp.last_sun() - 2, '00000000-0000-0000-0000-0000000000c4', '1:1', 'attended'),
+  ('00000000-0000-0000-0000-0000000d0002', pg_temp.last_sun() - 1, '00000000-0000-0000-0000-0000000000c4', '2:1', 'no_show'),
+  ('00000000-0000-0000-0000-0000000d0003', pg_temp.last_sun() - 1, '00000000-0000-0000-0000-0000000000c4', '1:1', 'cancelled_in_time'),
+  ('00000000-0000-0000-0000-0000000d0004', pg_temp.last_sun() + 1, '00000000-0000-0000-0000-0000000000c4', '1:1', 'attended');
+insert into public.session_players values
+  ('00000000-0000-0000-0000-0000000d0001', '00000000-0000-0000-0000-0000000000b1'),
+  ('00000000-0000-0000-0000-0000000d0002', '00000000-0000-0000-0000-0000000000b2'),
+  ('00000000-0000-0000-0000-0000000d0002', '00000000-0000-0000-0000-0000000000b3'),
+  ('00000000-0000-0000-0000-0000000d0003', '00000000-0000-0000-0000-0000000000b1'),
+  ('00000000-0000-0000-0000-0000000d0004', '00000000-0000-0000-0000-0000000000b1');
+
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a4';
+select pg_temp.check('invoice draft holds the week''s paid sessions only',
+  (select count(*) = 2 and sum(amount) = 120 from public.invoice_draft('00000000-0000-0000-0000-0000000000c4', pg_temp.last_sun())));
+do $$ begin
+  begin
+    perform public.submit_invoice('00000000-0000-0000-0000-0000000000c4', pg_temp.last_sun());
+    perform pg_temp.check('no invoice without ABN and bank details', false);
+  exception when others then perform pg_temp.check('no invoice without ABN and bank details', sqlerrm like 'Add your name%');
+  end;
+end $$;
+insert into public.coach_details (coach_id, legal_name, abn, bsb, account_number, account_name)
+values ('00000000-0000-0000-0000-0000000000c4', 'David Test', '51824753556', '082001', '123456789', 'D Test');
+do $$ begin
+  begin
+    perform public.submit_invoice('00000000-0000-0000-0000-0000000000c4', pg_temp.last_sun() + 14);
+    perform pg_temp.check('no invoice for a week that has not finished', false);
+  exception when others then perform pg_temp.check('no invoice for a week that has not finished', true);
+  end;
+end $$;
+select public.submit_invoice('00000000-0000-0000-0000-0000000000c4', pg_temp.last_sun()) as inv1 \gset
+select pg_temp.check('coach submits the weekly invoice',
+  (select total = 120 and number = 1 and coach_abn = '51824753556' from public.coach_invoices where id = :'inv1'));
+select pg_temp.check('invoice has one line per paid session', (select count(*) from public.invoice_lines) = 2);
+select pg_temp.check('nothing left to invoice after submitting',
+  not exists (select 1 from public.invoice_draft('00000000-0000-0000-0000-0000000000c4', pg_temp.last_sun())));
+do $$ begin
+  begin
+    perform public.submit_invoice('00000000-0000-0000-0000-0000000000c4', pg_temp.last_sun());
+    perform pg_temp.check('the same week cannot be invoiced twice', false);
+  exception when others then perform pg_temp.check('the same week cannot be invoiced twice', sqlerrm like 'Nothing to invoice%');
+  end;
+end $$;
+do $$ begin
+  begin
+    insert into public.coach_invoices (coach_id, number, period_start, period_end, total, coach_name, coach_legal_name, coach_abn, bsb, account_number, account_name)
+    values ('00000000-0000-0000-0000-0000000000c4', 9, current_date, current_date, 999, 'x', 'x', '1', '1', '1', '1');
+    perform pg_temp.check('coaches cannot write invoices directly', false);
+  exception when others then perform pg_temp.check('coaches cannot write invoices directly', true);
+  end;
+  begin
+    perform public.mark_invoices_paid(array(select id from public.coach_invoices));
+    perform pg_temp.check('coaches cannot mark invoices paid', false);
+  exception when others then perform pg_temp.check('coaches cannot mark invoices paid', true);
+  end;
+end $$;
+
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a3';
+select pg_temp.check('other coaches cannot see an invoice or bank details',
+  (select count(*) from public.coach_invoices) = 0 and (select count(*) from public.coach_details) = 0);
+do $$ begin
+  begin
+    perform public.submit_invoice('00000000-0000-0000-0000-0000000000c4', pg_temp.last_sun());
+    perform pg_temp.check('a coach cannot submit another coach''s invoice', false);
+  exception when others then perform pg_temp.check('a coach cannot submit another coach''s invoice', sqlerrm like 'You can only%');
+  end;
+end $$;
+
+-- a change after invoicing becomes a correction on the next invoice
+reset role;
+update public.sessions set outcome = 'cancelled_in_time' where id = '00000000-0000-0000-0000-0000000d0002';
+insert into public.sessions (id, session_date, coach_id, format, outcome) values
+  ('00000000-0000-0000-0000-0000000d0005', pg_temp.last_sun() - 3, '00000000-0000-0000-0000-0000000000c4', '1:1', 'attended'),
+  ('00000000-0000-0000-0000-0000000d0006', pg_temp.last_sun(), '00000000-0000-0000-0000-0000000000c4', '2:1', 'attended');
+insert into public.session_players values
+  ('00000000-0000-0000-0000-0000000d0005', '00000000-0000-0000-0000-0000000000b1'),
+  ('00000000-0000-0000-0000-0000000d0006', '00000000-0000-0000-0000-0000000000b1');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a4';
+select pg_temp.check('a changed session shows as a correction',
+  (select amount = -70 and is_correction and description like 'Correction:%'
+     from public.invoice_draft('00000000-0000-0000-0000-0000000000c4', pg_temp.last_sun()) where session_id = '00000000-0000-0000-0000-0000000d0002'));
+select public.submit_invoice('00000000-0000-0000-0000-0000000000c4', pg_temp.last_sun()) as inv2 \gset
+select pg_temp.check('second invoice nets the correction',
+  (select total = 50 and number = 2 from public.coach_invoices where id = :'inv2'));
+
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+do $$ begin
+  begin
+    perform public.submit_invoice('00000000-0000-0000-0000-0000000000c1', pg_temp.last_sun());
+    perform pg_temp.check('salaried staff do not invoice', false);
+  exception when others then perform pg_temp.check('salaried staff do not invoice', sqlerrm like '%salaried%');
+  end;
+end $$;
+select pg_temp.check('salaried staff have no session pay',
+  coalesce((select sum(pay) from public.coach_pay where coach_name = 'Jani'), 0) = 0);
+select pg_temp.check('Jan sees every invoice', (select count(*) from public.coach_invoices) = 2);
+select pg_temp.check('Jan marks invoices paid', public.mark_invoices_paid(array(select id from public.coach_invoices)) = 2);
+select pg_temp.check('Jan reads the bank file settings', (select user_id_number from public.bank_file_settings) = '000000');
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;
