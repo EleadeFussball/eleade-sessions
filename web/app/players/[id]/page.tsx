@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -35,7 +35,6 @@ export default function PlayerPage() {
   const [err, setErr] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
-  const router = useRouter();
 
   const load = useCallback(async () => {
     const [pl, b, ss, lg, nt] = await Promise.all([
@@ -78,13 +77,6 @@ export default function PlayerPage() {
     e.preventDefault(); setErr('');
     const { error } = await supabase.rpc('rename_player', { p_player_id: id, p_name: nameDraft });
     if (error) setErr(errorText(error)); else { setEditingName(false); load(); }
-  }
-
-  async function deletePlayer() {
-    if (!p) return;
-    if (!window.confirm(`Delete ${p.name}? This can't be undone.`)) return;
-    const { error } = await supabase.rpc('delete_player', { p_player_id: id });
-    if (error) setErr(errorText(error)); else router.replace('/players');
   }
 
   async function confirmPackage(ledgerId: string) {
@@ -208,12 +200,7 @@ export default function PlayerPage() {
 
       {p.billing_model === 'package' && <RecordPackage playerId={p.id} name={p.name} onSaved={load} />}
       {isAdmin && <AdminPanel p={p} onSaved={load} />}
-      {canManage && (
-        <p className="mt">
-          <button type="button" className="linkbtn" style={{ color: 'var(--red)' }} onClick={deletePlayer}>Delete this player</button>
-          <br /><span className="hint">Only possible while the player has no sessions and no credit history, for example a name added by mistake.</span>
-        </p>
-      )}
+
       {err && <div className="notice err">{err}</div>}
     </>
   );

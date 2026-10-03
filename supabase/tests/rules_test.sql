@@ -149,8 +149,6 @@ insert into public.players (name) values ('  Typo   nme ');
 select pg_temp.check('new player names are tidied', exists (select 1 from public.players where name = 'Typo nme'));
 select public.rename_player((select id from public.players where name = 'Typo nme'), 'Typo Name');
 select pg_temp.check('coach can rename a player they added', exists (select 1 from public.players where name = 'Typo Name'));
-select public.delete_player((select id from public.players where name = 'Typo Name'));
-select pg_temp.check('coach can delete a player they added by mistake', not exists (select 1 from public.players where name = 'Typo Name'));
 do $$ begin
   begin
     perform public.rename_player('00000000-0000-0000-0000-0000000000b1', 'Someone Else');
@@ -190,13 +188,6 @@ do $$ begin
   end;
 end $$;
 
-do $$ begin
-  begin
-    perform public.delete_player('00000000-0000-0000-0000-0000000000b9');
-    perform pg_temp.check('a player with sessions cannot be deleted', false);
-  exception when others then perform pg_temp.check('a player with sessions cannot be deleted', true, sqlerrm);
-  end;
-end $$;
 insert into public.credit_ledger (player_id, kind, sessions_delta, analyses_delta, package_name, amount_paid, payment_method, reason)
   values ('00000000-0000-0000-0000-0000000000b9', 'purchase', 5, 0, '5 pack', 650, 'stripe', 'Bought 5 pack after assessment');
 select public.log_session(public.today_sydney() - 2, '00000000-0000-0000-0000-0000000000c2', '1:1', 'attended',
@@ -328,13 +319,6 @@ end $$;
 
 select public.rename_player('00000000-0000-0000-0000-0000000000b3', 'Echo Sibling');
 select pg_temp.check('Jan can rename any player', exists (select 1 from public.players where name = 'Echo Sibling'));
-do $$ begin
-  begin
-    perform public.delete_player('00000000-0000-0000-0000-0000000000b1');
-    perform pg_temp.check('even Jan cannot delete a player with history', false);
-  exception when others then perform pg_temp.check('even Jan cannot delete a player with history', true);
-  end;
-end $$;
 
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
