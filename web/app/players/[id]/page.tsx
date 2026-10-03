@@ -206,6 +206,7 @@ export default function PlayerPage() {
   );
 }
 
+const TAILORED = '__tailored__';
 const PACKAGES = [
   { name: '5 pack', s: 5, a: 0, price: 650, months: 3 },
   { name: '10 pack', s: 10, a: 2, price: 1300, months: 6 },
@@ -335,11 +336,23 @@ function RecordPackage({ playerId, name, onSaved }: { playerId: string; name: st
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
-  const k = PACKAGES.find((x) => x.name === pkg);
+  const [tS, setTS] = useState('');
+  const [tA, setTA] = useState('0');
+  const [tPrice, setTPrice] = useState('');
+  const tailored = pkg === TAILORED;
+  const k = tailored
+    ? { name: 'Tailored package', s: Number(tS || 0), a: Number(tA || 0), price: Number(tPrice || 0), months: 0 }
+    : PACKAGES.find((x) => x.name === pkg);
 
   async function save(e: React.FormEvent) {
     e.preventDefault(); setErr(''); setMsg('');
     if (!k) { setErr('Pick the package first.'); return; }
+    if (tailored) {
+      if (!Number.isInteger(k.s) || !Number.isInteger(k.a) || k.s < 0 || k.a < 0 || k.s + k.a === 0) {
+        setErr('Enter the number of sessions and/or game analyses (whole numbers).'); return;
+      }
+      if (!tPrice.trim() || !(k.price >= 0)) { setErr('Enter the price, ex GST.'); return; }
+    }
     setBusy(true);
     let expires: string | null = null;
     if (k.months) { const d = fromISO(date); d.setMonth(d.getMonth() + k.months); expires = toISO(d); }
@@ -347,14 +360,17 @@ function RecordPackage({ playerId, name, onSaved }: { playerId: string; name: st
       player_id: playerId, kind: 'purchase', sessions_delta: k.s, analyses_delta: k.a,
       package_name: k.name, amount_paid: k.price, payment_method: method || null,
       payment_status: isAdmin && method ? 'confirmed' : 'awaiting',
-      reason: `Bought ${k.name}`, effective_date: date, expires_on: expires,
+      reason: tailored
+        ? `Tailored package: ${k.s} session${k.s === 1 ? '' : 's'}${k.a ? `, ${k.a} game ${k.a === 1 ? 'analysis' : 'analyses'}` : ''}`
+        : `Bought ${k.name}`,
+      effective_date: date, expires_on: expires,
     });
     setBusy(false);
     if (error) { setErr(errorText(error)); return; }
     setMsg(isAdmin
       ? `${k.name} added for ${name}${method ? ', payment checked.' : '. Confirm the payment in the credit history once it arrives.'}`
       : `${k.name} added for ${name}. The credits work straight away, and Jan will check the payment.`);
-    setPkg(''); setMethod(''); onSaved();
+    setPkg(''); setMethod(''); setTS(''); setTA('0'); setTPrice(''); onSaved();
   }
 
   return (
@@ -369,8 +385,19 @@ function RecordPackage({ playerId, name, onSaved }: { playerId: string; name: st
                 {x.name}
               </button>
             ))}
+            <button type="button" aria-pressed={tailored} onClick={() => setPkg(TAILORED)}>Tailored package</button>
           </div>
-          {k && <p className="hint mt">{k.s} sessions{k.a ? ` and ${k.a} game ${k.a === 1 ? 'analysis' : 'analyses'}` : ''}, {money(k.price)} ex GST{k.months ? `, valid ${k.months} months` : ', per month'}.</p>}
+          {tailored && (
+            <div className="row mt" style={{ flexWrap: 'wrap' }}>
+              <label className="field" style={{ flex: '1 1 90px' }}><span>Sessions</span>
+                <input type="number" inputMode="numeric" min={0} step={1} value={tS} onChange={(e) => setTS(e.target.value)} placeholder="e.g. 8" /></label>
+              <label className="field" style={{ flex: '1 1 90px' }}><span>Game analyses</span>
+                <input type="number" inputMode="numeric" min={0} step={1} value={tA} onChange={(e) => setTA(e.target.value)} /></label>
+              <label className="field" style={{ flex: '1 1 110px' }}><span>Price, ex GST ($)</span>
+                <input type="number" inputMode="decimal" min={0} step="0.01" value={tPrice} onChange={(e) => setTPrice(e.target.value)} placeholder="e.g. 1000" /></label>
+            </div>
+          )}
+          {k && !tailored && <p className="hint mt">{k.s} sessions{k.a ? ` and ${k.a} game ${k.a === 1 ? 'analysis' : 'analyses'}` : ''}, {money(k.price)} ex GST{k.months ? `, valid ${k.months} months` : ', per month'}.</p>}
         </div>
         <div className="field">
           <span className="fieldlabel">How did they pay?</span>

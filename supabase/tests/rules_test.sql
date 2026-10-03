@@ -211,6 +211,20 @@ end $$;
 with u as (update public.credit_ledger set payment_status = 'confirmed' where reason = 'Bought 5 pack after assessment' returning 1)
 select pg_temp.check('coach cannot confirm a package payment', (select count(*) from u) = 0);
 select pg_temp.check('coach cannot see the payments to confirm', (select count(*) from public.payments_to_confirm) = 0);
+select public.log_session(public.today_sydney() - 1, '00000000-0000-0000-0000-0000000000c2', '1:1', 'attended',
+  array['00000000-0000-0000-0000-0000000000b9']::uuid[], null, null, 'Stripe paid', null, null, 'stripe');
+select pg_temp.check('a session paid by Stripe link uses no credit and waits for a check',
+  (select sessions_left from public.player_balances where name = 'New Kid') = 5
+  and (select payment_status from public.sessions where topic = 'Stripe paid') = 'awaiting');
+update public.sessions set payment_method = null where topic = 'Stripe paid';
+select pg_temp.check('switching a session to package credit uses a credit and clears the payment check',
+  (select sessions_left from public.player_balances where name = 'New Kid') = 4
+  and (select payment_status from public.sessions where topic = 'Stripe paid') is null);
+update public.sessions set payment_method = 'cash' where topic = 'Stripe paid';
+select pg_temp.check('switching back to cash frees the credit and asks for a check again',
+  (select sessions_left from public.player_balances where name = 'New Kid') = 5
+  and (select payment_status from public.sessions where topic = 'Stripe paid') = 'awaiting');
+update public.sessions set payment_method = null where topic = 'Stripe paid';
 
 -- ---------- regular sessions (as Tyler, then Paul) ----------
 insert into public.players (id, name) values ('00000000-0000-0000-0000-0000000000ba', 'Plan Kid');

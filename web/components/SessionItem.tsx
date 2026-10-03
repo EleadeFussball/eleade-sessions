@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { fmtDate } from '@/lib/dates';
-import { FORMAT_LABEL, OUTCOME_LABEL, type Outcome, type SessionRow } from '@/lib/types';
+import { FORMAT_LABEL, OUTCOME_LABEL, PAYMENT_LABEL, type Outcome, type PaymentMethod, type SessionRow } from '@/lib/types';
 
 const OUTCOMES: Outcome[] = ['attended', 'cancelled_in_time', 'cancelled_late', 'no_show'];
 
@@ -14,6 +14,7 @@ export function SessionItem({ s, onChanged, showPlayers = false }: { s: SessionR
   const [topic, setTopic] = useState(s.topic ?? '');
   const [obs, setObs] = useState(s.observations ?? '');
   const [improve, setImprove] = useState(s.improve ?? '');
+  const [method, setMethod] = useState<PaymentMethod | ''>(s.payment_method ?? '');
   const [err, setErr] = useState('');
 
   const recent = Date.now() - new Date(s.logged_at).getTime() < 7 * 864e5;
@@ -24,7 +25,8 @@ export function SessionItem({ s, onChanged, showPlayers = false }: { s: SessionR
   async function save() {
     setErr('');
     const { error } = await supabase.from('sessions')
-      .update({ outcome, topic: topic.trim() || null, observations: obs.trim() || null, improve: improve.trim() || null })
+      .update({ outcome, topic: topic.trim() || null, observations: obs.trim() || null, improve: improve.trim() || null,
+                payment_method: outcome === 'cancelled_in_time' || !method ? null : method })
       .eq('id', s.id);
     if (error) setErr(errorText(error)); else { setEditing(false); onChanged(); }
   }
@@ -49,7 +51,8 @@ export function SessionItem({ s, onChanged, showPlayers = false }: { s: SessionR
       {s.payment_status && (
         <div style={{ marginTop: 4 }}>
           {(() => {
-            const what = s.payment_method === 'cash' ? 'Cash payment' : s.format === 'assessment' ? '$130 payment' : 'Payment';
+            const what = s.format === 'assessment' ? '$130 payment'
+              : s.payment_method ? `${PAYMENT_LABEL[s.payment_method]} payment` : 'Payment';
             return s.payment_status === 'awaiting'
               ? <span className="tag amber">{what} to check</span>
               : <span className="tag turf">{what} checked</span>;
@@ -74,6 +77,26 @@ export function SessionItem({ s, onChanged, showPlayers = false }: { s: SessionR
               <button key={o} type="button" aria-pressed={outcome === o} onClick={() => setOutcome(o)}>{OUTCOME_LABEL[o]}</button>
             ))}
           </div>
+          {outcome !== 'cancelled_in_time' && s.format !== 'testing' && (
+            <div className="field">
+              <span className="fieldlabel">How was it paid?</span>
+              <div className="seg">
+                <button type="button" aria-pressed={method === ''} onClick={() => setMethod('')}>
+                  {s.format === 'assessment' ? 'Not paid yet' : 'Package credit'}
+                </button>
+                {(['cash', 'stripe', 'bank'] as PaymentMethod[]).map((m) => (
+                  <button key={m} type="button" aria-pressed={method === m} onClick={() => setMethod(m)}>{m === 'cash' ? 'Paid cash' : PAYMENT_LABEL[m]}</button>
+                ))}
+              </div>
+              {s.format !== 'assessment' && (
+                <p className="hint mt">
+                  {method === ''
+                    ? 'Uses one package credit (weekly payers: added to their weekly transfer).'
+                    : 'Paid on its own: no credit used. Jan checks the payment.'}
+                </p>
+              )}
+            </div>
+          )}
           <label className="field"><span>What you worked on</span><textarea value={topic} onChange={(e) => setTopic(e.target.value)} /></label>
           <label className="field"><span>How it went</span><textarea value={obs} onChange={(e) => setObs(e.target.value)} /></label>
           <label className="field"><span>Next session</span><textarea value={improve} onChange={(e) => setImprove(e.target.value)} /></label>
