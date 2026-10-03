@@ -445,6 +445,33 @@ select pg_temp.check('Jan sees every invoice', (select count(*) from public.coac
 select pg_temp.check('Jan marks invoices paid', public.mark_invoices_paid(array(select id from public.coach_invoices)) = 2);
 select pg_temp.check('Jan reads the bank file settings', (select user_id_number from public.bank_file_settings) = '000000');
 
+-- ---------- stats and expiry ----------
+reset role;
+insert into public.credit_ledger (player_id, kind, sessions_delta, package_name, amount_paid, reason, effective_date, expires_on) values
+  ('00000000-0000-0000-0000-0000000000b5', 'purchase', 5, '5 pack', 600, 'Stats test pack', public.today_sydney() - 60, public.today_sydney() + 10);
+insert into public.sessions (id, session_date, coach_id, format, outcome) values
+  ('00000000-0000-0000-0000-00000000aa01', public.today_sydney(), '00000000-0000-0000-0000-0000000000c3', '1:1', 'attended'),
+  ('00000000-0000-0000-0000-00000000aa02', public.today_sydney(), '00000000-0000-0000-0000-0000000000c3', '1:1', 'cancelled_late');
+insert into public.session_players values
+  ('00000000-0000-0000-0000-00000000aa01', '00000000-0000-0000-0000-0000000000b5'),
+  ('00000000-0000-0000-0000-00000000aa02', '00000000-0000-0000-0000-0000000000b5');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select pg_temp.check('package session is valued at the package price per session',
+  (select est_income from public.stats_sessions where session_id = '00000000-0000-0000-0000-00000000aa01') = 120);
+select pg_temp.check('a late cancellation still counts as income and pay',
+  (select est_income = 120 and coach_pay = 60 from public.stats_sessions where session_id = '00000000-0000-0000-0000-00000000aa02'));
+select pg_temp.check('weekly payer is valued at their session price',
+  exists (select 1 from public.stats_sessions where player_names = 'Charlie Weekly' and est_income = 130));
+select pg_temp.check('money in includes the package bought',
+  exists (select 1 from public.stats_money_in where source = 'Packages' and amount = 600));
+select pg_temp.check('package expiring with credits left is flagged',
+  exists (select 1 from public.expiring_packages where name = 'Regular Ray' and days_left = 10));
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a3';
+select pg_temp.check('coaches cannot see the business numbers',
+  (select count(*) from public.stats_sessions) = 0 and (select count(*) from public.stats_money_in) = 0);
+select pg_temp.check('coaches see expiring packages', exists (select 1 from public.expiring_packages where name = 'Regular Ray'));
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;

@@ -7,6 +7,7 @@ import { addDays, fmtDate, fmtWeek, money, num, todayISO, weekStart } from '@/li
 import { invoiceNo, type CoachInvoice, type PlayerBalance } from '@/lib/types';
 import { buildAba, type AbaPayer } from '@/lib/bank';
 
+type Expiring = { player_id: string; name: string; family: string | null; package_name: string | null; expires_on: string; days_left: number; sessions_left: number | null; analyses_left: number | null };
 type Missing = { player_id: string; name: string; main_coach_id: string | null; last_logged: string | null };
 type Late = { session_id: string; session_date: string; logged_on: string; coach_name: string; days_late: number };
 type Payg = { player_id: string; name: string; week_start: string; sessions: number; owed: number; paid: number; outstanding: number };
@@ -26,11 +27,12 @@ export default function MondayPage() {
   const [unconfirmed, setUnconfirmed] = useState(0);
   const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
   const [err, setErr] = useState('');
+  const [expiring, setExpiring] = useState<Expiring[]>([]);
   const [toPay, setToPay] = useState<CoachInvoice[]>([]);
   const [bank, setBank] = useState<AbaPayer & { bsb: string | null; account_number: string | null; account_name: string | null } | null>(null);
 
   const load = useCallback(async () => {
-    const [b, m, l, g, p, c, inv, bk] = await Promise.all([
+    const [b, m, l, g, p, c, inv, bk, ex] = await Promise.all([
       supabase.from('player_balances').select('*').eq('active', true).eq('billing_model', 'package').order('sessions_left'),
       supabase.from('missing_sessions').select('*').order('name'),
       supabase.from('late_logs').select('*').gte('session_date', addDays(lastWeek, -7)).order('session_date', { ascending: false }),
@@ -39,7 +41,9 @@ export default function MondayPage() {
       supabase.from('payments_to_confirm').select('*').order('item_date', { ascending: false }),
       supabase.from('coach_invoices').select('*').eq('status', 'submitted').order('coach_name').order('number'),
       supabase.from('bank_file_settings').select('*').maybeSingle(),
+      supabase.from('expiring_packages').select('*').order('days_left'),
     ]);
+    setExpiring((ex.data as Expiring[]) ?? []);
     setToPay((inv.data as CoachInvoice[]) ?? []);
     setBank(bk.data as typeof bank);
     setToConfirm((c.data as ToConfirm[]) ?? []);
@@ -162,6 +166,21 @@ export default function MondayPage() {
               </tr>
             ))}
           </tbody>
+        </table>
+      )}
+
+      <h2>Packages expiring soon ({expiring.length})</h2>
+      <p className="hint">Packages that expire within 4 weeks, or expired in the last 2, with credits still left.</p>
+      {expiring.length === 0 ? <p className="empty">No packages about to expire with credits left.</p> : (
+        <table className="t">
+          <thead><tr><th>Player</th><th>Expires</th><th className="n">Left</th></tr></thead>
+          <tbody>{expiring.map((e) => (
+            <tr key={e.player_id}>
+              <td><Link href={`/players/${e.player_id}`}>{e.family ? `${e.family} family` : e.name}</Link><br /><span className="hint">{e.package_name ?? 'Package'}</span></td>
+              <td>{fmtDate(e.expires_on)}<br /><span className={e.days_left < 0 ? 'tag red' : e.days_left <= 7 ? 'tag amber' : 'tag'}>{e.days_left < 0 ? `Expired ${-e.days_left} days ago` : e.days_left === 0 ? 'Today' : `In ${e.days_left} days`}</span></td>
+              <td className="n">{num(e.sessions_left)}{Number(e.analyses_left) > 0 ? ` + ${num(e.analyses_left)} analyses` : ''}</td>
+            </tr>
+          ))}</tbody>
         </table>
       )}
 

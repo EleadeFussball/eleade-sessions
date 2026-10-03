@@ -27,6 +27,7 @@ export default function PlayerPage() {
   const { coaches, isAdmin, session } = useAuth();
   const [p, setP] = useState<Player | null>(null);
   const [bal, setBal] = useState<PlayerBalance | null>(null);
+  const [expiry, setExpiry] = useState<{ player_id: string; family: string | null; expires_on: string; days_left: number; package_name: string | null }[]>([]);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [ledger, setLedger] = useState<Ledger[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -51,6 +52,10 @@ export default function PlayerPage() {
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    supabase.from('expiring_packages').select('player_id, family, expires_on, days_left, package_name')
+      .then(({ data }) => setExpiry((data as typeof expiry) ?? []));
+  }, [id]);
 
   // the full participant list for group sessions (the inner join above only returns this player)
   const [groupNames, setGroupNames] = useState<Record<string, string>>({});
@@ -126,6 +131,13 @@ export default function PlayerPage() {
             <div><div className="big">{num(bal.analyses_left)}</div><div className="cap">game analyses left</div></div>
           </div>
           {!p.opening_confirmed && <div className="notice warn">Starting balance taken from the old spreadsheet and not yet confirmed by Jan.</div>}
+          {expiry.filter((e) => e.player_id === p.id || (p.family && e.family === p.family)).map((e) => (
+            <div key={e.expires_on} className="notice warn">
+              {e.days_left >= 0
+                ? `${e.package_name ?? 'Package'} expires on ${fmtDate(e.expires_on)} (in ${e.days_left} day${e.days_left === 1 ? '' : 's'}) with credits still left. Book the remaining sessions, or Jan talks to the parents about renewing.`
+                : `${e.package_name ?? 'Package'} expired on ${fmtDate(e.expires_on)} with credits still left. Jan decides whether to extend it.`}
+            </div>
+          ))}
           {cls === 'out' && <div className="notice warn">No credits left. Jan needs to talk to the parents about the next package.</div>}
         </>
       ) : (

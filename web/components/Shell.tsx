@@ -10,6 +10,7 @@ const TABS = [
   { href: '/players', label: 'Players', admin: false },
   { href: '/week', label: 'My week', admin: false },
   { href: '/monday', label: 'Monday', admin: true },
+  { href: '/stats', label: 'Stats', admin: true },
   { href: '/team', label: 'Team', admin: true },
 ];
 
