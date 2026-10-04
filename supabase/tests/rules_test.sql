@@ -538,7 +538,7 @@ select sessions_left as bal_delta from public.player_balances where name = 'Delt
 select public.create_booking('00000000-0000-0000-0000-0000000000c2', public.today_sydney(), time '16:00', '1:1',
   array['00000000-0000-0000-0000-0000000000b1']::uuid[], 'Moore Park', 'Bring cones') as bk \gset
 select pg_temp.check('a one-off session is on the schedule',
-  (select count(*) from public.schedule(public.today_sydney(), public.today_sydney())
+  (select count(*) from public.calendar(public.today_sydney(), public.today_sydney())
     where kind = 'once' and ref_id = :'bk' and players = 'Alpha Pack' and location = 'Moore Park') = 1);
 select pg_temp.check('a planned session uses no credit yet',
   (select sessions_left from public.player_balances where name = 'Alpha Pack') = :bal_alpha);
@@ -552,7 +552,7 @@ do $$ begin
 end $$;
 select public.move_booking(:'bk', public.today_sydney(), time '17:30');
 select pg_temp.check('a one-off session can be moved',
-  (select start_time from public.schedule(public.today_sydney(), public.today_sydney()) where ref_id = :'bk') = time '17:30');
+  (select start_time from public.calendar(public.today_sydney(), public.today_sydney()) where ref_id = :'bk') = time '17:30');
 
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a3';
 do $$ begin
@@ -563,7 +563,7 @@ do $$ begin
   end;
 end $$;
 select pg_temp.check('every coach sees the schedule',
-  (select count(*) from public.schedule(public.today_sydney(), public.today_sydney()) where kind = 'once') = 1);
+  (select count(*) from public.calendar(public.today_sydney(), public.today_sydney()) where kind = 'once') = 1);
 
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
 select public.confirm_booking(:'bk', 'attended', 'Finishing', 'Sharp today', 'Weak foot') as sid \gset
@@ -571,7 +571,7 @@ select pg_temp.check('confirming a one-off session logs it and uses a credit',
   (select sessions_left from public.player_balances where name = 'Alpha Pack') = :bal_alpha - 1
   and (select topic from public.sessions where id = :'sid') = 'Finishing');
 select pg_temp.check('the schedule shows it as done',
-  (select outcome from public.schedule(public.today_sydney(), public.today_sydney()) where ref_id = :'bk') = 'attended');
+  (select outcome from public.calendar(public.today_sydney(), public.today_sydney()) where ref_id = :'bk') = 'attended');
 do $$ begin
   begin
     perform public.confirm_booking((select id from public.bookings where session_id is not null limit 1), 'attended');
@@ -590,8 +590,37 @@ do $$ begin
 end $$;
 select public.cancel_booking(:'bk2');
 select pg_temp.check('a cancelled plan leaves the calendar and charges nobody',
-  not exists (select 1 from public.schedule(public.today_sydney(), public.today_sydney() + 7) where ref_id = :'bk2')
+  not exists (select 1 from public.calendar(public.today_sydney(), public.today_sydney() + 7) where ref_id = :'bk2')
   and (select sessions_left from public.player_balances where name = 'Delta Sib') = :bal_delta);
+
+-- ---------- durations on the calendar ----------
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.book_session('00000000-0000-0000-0000-0000000000c2', public.today_sydney(), time '07:00', 90, '1:1',
+  array['00000000-0000-0000-0000-0000000000b1']::uuid[], null, null) as bk3 \gset
+select pg_temp.check('a session can be longer than an hour',
+  (select minutes from public.calendar(public.today_sydney(), public.today_sydney()) where ref_id = :'bk3') = 90);
+select public.reschedule('once', :'bk3', null, public.today_sydney(), time '08:00', 60);
+select pg_temp.check('moving can change the length too',
+  (select start_time = time '08:00' and minutes = 60 from public.calendar(public.today_sydney(), public.today_sydney()) where ref_id = :'bk3'));
+select pg_temp.check('a session planned without a length runs an hour',
+  (select minutes from public.bookings where id = :'bk3') = 60);
+do $$ begin
+  begin
+    perform public.book_session('00000000-0000-0000-0000-0000000000c2', public.today_sydney(), time '09:00', 1000, '1:1',
+      array['00000000-0000-0000-0000-0000000000b1']::uuid[], null, null);
+    perform pg_temp.check('a session cannot run for eight hours plus', false);
+  exception when others then perform pg_temp.check('a session cannot run for eight hours plus', true);
+  end;
+end $$;
+select public.confirm_booking(:'bk3', 'attended') as sid3 \gset
+select pg_temp.check('the logged session keeps the planned length',
+  (select minutes from public.sessions where id = :'sid3') = 60);
+select pg_temp.check('a session logged on its own shows on the calendar',
+  exists (select 1 from public.calendar(public.today_sydney() - 28, public.today_sydney())
+           where kind = 'logged' and ref_id = '00000000-0000-0000-0000-00000000e001'));
+select pg_temp.check('a confirmed plan is not listed twice',
+  (select count(*) from public.calendar(public.today_sydney(), public.today_sydney()) where ref_id = :'bk3') = 1);
 
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;

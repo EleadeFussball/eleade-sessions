@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth';
 import { addDays, fmtDate, todayISO } from '@/lib/dates';
 import { normaliseTime } from '@/lib/time';
 import { FORMAT_LABEL, OUTCOME_LABEL, type Outcome } from '@/lib/types';
-import { cancelEntry, confirmEntry, hhmm, moveEntry, type ScheduleEntry } from '@/lib/schedule';
+import { cancelEntry, confirmEntry, hhmm, moveEntry, timeRange, type ScheduleEntry } from '@/lib/schedule';
 
 /** One planned session, with the actions a coach needs: done, cancelled, moved, removed. */
 export function ScheduleItem({ o, onDone, showDay = false, showCoach = false }:
@@ -20,6 +20,7 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false }:
   const [cancelKind, setCancelKind] = useState<Outcome>('cancelled_in_time');
   const [newDate, setNewDate] = useState(o.session_date);
   const [newTime, setNewTime] = useState(hhmm(o.start_time));
+  const [minutes, setMinutes] = useState(o.minutes);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -39,7 +40,7 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false }:
     const t = normaliseTime(newTime);
     if (!t) { setErr('Start time not recognised. Type it like 630, 6:30 or 1800.'); return; }
     setBusy(true); setErr('');
-    const { error } = await moveEntry(o, newDate, t);
+    const { error } = await moveEntry(o, newDate, t, minutes);
     setBusy(false);
     if (error) setErr(errorText(error)); else { setMode(''); onDone(); }
   }
@@ -55,7 +56,7 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false }:
   return (
     <li className="session">
       <div className="head">
-        <span>{showDay ? `${fmtDate(o.session_date, true)}, ` : ''}{hhmm(o.start_time)} · {o.players}</span>
+        <span>{showDay ? `${fmtDate(o.session_date, true)}, ` : ''}{timeRange(o.start_time, o.minutes) || 'No time set'} · {o.players}</span>
         {o.session_id
           ? <span className={o.outcome === 'attended' ? 'tag turf' : 'tag amber'}>{OUTCOME_LABEL[o.outcome as Outcome]}</span>
           : o.moved ? <span className="tag">Moved</span>
@@ -66,7 +67,12 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false }:
       </div>
       {o.note && <div className="sub">{o.note}</div>}
 
-      {!o.session_id && mode === '' && mine && (
+      {o.kind === 'logged' && mode === '' && mine && (
+        <div className="row mt">
+          <button type="button" className="btn small ghost" onClick={() => setMode('move')}>Change time</button>
+        </div>
+      )}
+      {o.kind !== 'logged' && !o.session_id && mode === '' && mine && (
         <div className="row mt" style={{ flexWrap: 'wrap' }}>
           <button type="button" className="btn small" disabled={future} onClick={() => setMode('done')}>Done</button>
           <button type="button" className="btn small ghost" disabled={future} onClick={() => setMode('cancel')}>Cancelled</button>
@@ -117,11 +123,21 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false }:
                      min={o.kind === 'regular' && o.plan_date ? addDays(o.plan_date, -14) : undefined}
                      max={o.kind === 'regular' && o.plan_date ? addDays(o.plan_date, 14) : undefined}
                      onChange={(e) => setNewDate(e.target.value)} /></label>
-            <label className="field" style={{ flex: '0 0 110px' }}><span>Start</span>
+            <label className="field" style={{ flex: '0 0 100px' }}><span>Start</span>
               <input type="text" inputMode="numeric" value={newTime} onChange={(e) => setNewTime(e.target.value)}
                      onBlur={() => setNewTime(normaliseTime(newTime) || newTime)} /></label>
           </div>
-          {o.kind === 'regular' && <p className="hint">A weekly session can be moved up to two weeks either way. Only this week changes.</p>}
+          <div className="field">
+            <span className="fieldlabel">Length</span>
+            <div className="seg">
+              {[45, 60, 90, 120].map((m) => (
+                <button key={m} type="button" aria-pressed={minutes === m} onClick={() => setMinutes(m)}>
+                  {m < 60 ? `${m}m` : m % 60 === 0 ? `${m / 60}h` : `${Math.floor(m / 60)}h${m % 60}`}
+                </button>
+              ))}
+            </div>
+          </div>
+          {o.kind === 'regular' && <p className="hint">A weekly session can be moved up to two weeks either way. Only this week moves; a new length applies every week.</p>}
           <div className="row">
             <button className="btn small" disabled={busy}>{busy ? 'Saving' : 'Move session'}</button>
             <button type="button" className="btn small ghost" onClick={() => setMode('')}>Back</button>

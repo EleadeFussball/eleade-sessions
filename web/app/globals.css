@@ -241,3 +241,44 @@ details.panel[open] > summary { border-bottom: 1px solid var(--line); margin-bot
 .cal-day .list { border-top: 0; }
 .cal-day .list > li:last-child { border-bottom: 0; }
 .panel-form { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 14px 4px; }
+
+/* ---------- calendar time grid ---------- */
+.grid-wrap { margin: 0 -4px; padding-top: 10px; }
+.grid-untimed { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.grid-head { display: grid; position: sticky; top: 0; z-index: 3; background: var(--chalk); padding-bottom: 2px; }
+.gh { text-align: center; padding: 2px 0 4px; border-left: 1px solid var(--line); }
+.gh-day { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.gh-num { display: block; font: 700 1.1rem/1.2 var(--score); }
+.gh.on .gh-num { background: var(--brand-red); color: #fff; border-radius: 999px; width: 28px; height: 28px; line-height: 28px; margin: 0 auto; }
+.gh.on .gh-day { color: var(--brand-red); }
+.grid-body { display: grid; position: relative; }
+.grid-times { position: relative; }
+.gt { position: relative; }
+.gt span { position: absolute; top: -7px; right: 6px; font-size: .7rem; color: var(--muted); background: var(--chalk); padding: 0 2px; }
+.grid-col {
+  position: relative; border-left: 1px solid var(--line); cursor: copy; min-width: 0;
+  background-image: repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px 100%);
+  background-repeat: repeat-y;
+}
+.grid-col.today { background-color: rgba(200, 150, 30, .07); }
+.grid-now { position: absolute; left: 0; right: 0; height: 2px; background: var(--brand-red); z-index: 2; }
+.grid-now::before { content: ''; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--brand-red); }
+.ev {
+  position: absolute; z-index: 1; overflow: hidden; text-align: left; cursor: pointer;
+  border: 0; border-left: 3px solid var(--ink); border-radius: 5px; padding: 2px 5px;
+  background: var(--turf-soft); color: var(--ink); font: 500 .72rem/1.2 var(--body);
+  display: flex; flex-direction: column; gap: 1px;
+}
+.ev.flat { position: static; width: auto; height: auto; padding: 4px 6px; font-size: .72rem; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grid-allday { display: grid; border-top: 1px solid var(--line); padding: 4px 0; }
+.ad-col { border-left: 1px solid var(--line); padding: 0 2px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gt-label { font-size: .68rem; color: var(--muted); text-align: right; padding-right: 6px; }
+.ev-regular { border-left-color: var(--brand-red); }
+.ev-logged { border-left-color: var(--brand-gold); }
+.ev.done { background: var(--ok-soft); border-left-color: var(--ok); }
+.ev.on { outline: 2px solid var(--ink); outline-offset: -1px; }
+.ev.dragging { opacity: .85; box-shadow: 0 3px 10px rgba(0,0,0,.2); z-index: 4; }
+.ev-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.ev-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-sub { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 639px) { .ev { font-size: .76rem; } .ev-sub { display: none; } }
