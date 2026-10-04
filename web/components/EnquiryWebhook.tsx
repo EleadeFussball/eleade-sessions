@@ -52,8 +52,23 @@ export function EnquiryWebhook() {
     <details className="panel">
       <summary>Website enquiries: connect the expression of interest form</summary>
       <p className="hint">Each submission of your Wix form is sent to the address below and appears in Enquiries. The key makes sure only your website can send.</p>
+      {key && (
+        <div className="field">
+          <span className="fieldlabel">Address for Wix (already includes the key)</span>
+          <div className="row" style={{ alignItems: 'center' }}>
+            <input type={show ? 'text' : 'password'} readOnly value={`${endpoint}?key=${key}`} onFocus={(e) => e.currentTarget.select()} />
+            <button type="button" className="btn small ghost" style={{ flex: '0 0 auto' }} onClick={() => copy(`${endpoint}?key=${key}`, 'wix')}>{copied === 'wix' ? 'Copied' : 'Copy'}</button>
+          </div>
+          <ol className="hint">
+            <li>Wix dashboard, Automations, open your form automation.</li>
+            <li>Add the action &quot;Send HTTP request&quot; after the email.</li>
+            <li>Method POST, paste this address, body &quot;Entire payload from trigger&quot;.</li>
+            <li>Activate, then submit the form once to test.</li>
+          </ol>
+        </div>
+      )}
       <div className="field">
-        <span className="fieldlabel">Address (POST)</span>
+        <span className="fieldlabel">Address only (POST)</span>
         <div className="row" style={{ alignItems: 'center' }}>
           <input type="text" readOnly value={endpoint} onFocus={(e) => e.currentTarget.select()} />
           <button type="button" className="btn small ghost" style={{ flex: '0 0 auto' }} onClick={() => copy(endpoint, 'url')}>{copied === 'url' ? 'Copied' : 'Copy'}</button>

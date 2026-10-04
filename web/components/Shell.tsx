@@ -27,8 +27,8 @@ export function Shell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!coach) return;
     let alive = true;
-    supabase.from('enquiries').select('id', { count: 'exact', head: true })
-      .eq('status', isAdmin ? 'new' : 'assigned')
+    const q = supabase.from('enquiries').select('id', { count: 'exact', head: true });
+    (isAdmin ? q.or('status.eq.new,and(status.eq.done,outcome.eq.handover)') : q.eq('status', 'assigned'))
       .then(({ count }) => { if (alive) setNewEnquiries(count ?? 0); });
     return () => { alive = false; };
   }, [coach, isAdmin, path]);

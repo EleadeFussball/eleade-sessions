@@ -784,6 +784,35 @@ select pg_temp.check('the last place a player was coached is found',
 select pg_temp.check('a player never coached anywhere has no last place',
   public.last_location('00000000-0000-0000-0000-0000000000cb') is null);
 
+
+-- ---------- enquiry process ----------
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select public.add_enquiry('{"first_name":"Manual","last_name":"Entry","parent_name":"Mum Entry","parent_phone":"0411 222 333","parent_email":"mum@test"}'::jsonb) as man \gset
+select pg_temp.check('Jan can add an enquiry by hand',
+  (select parent_phone = '0411 222 333' and parent_email = 'mum@test' and source = 'manual' from public.enquiries where id = :'man'));
+select public.enquiry_called(:'man', 'Keen, wants Wednesdays');
+select pg_temp.check('Jan records the call with a note',
+  (select called_at is not null and note = 'Keen, wants Wednesdays' from public.enquiries where id = :'man'));
+select public.assign_enquiry(:'man', '00000000-0000-0000-0000-0000000000c2');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.set_enquiry_outcome(:'man', 'handover');
+select pg_temp.check('the coach hands the family over to Jan after the assessment',
+  (select outcome = 'handover' and status = 'done' from public.enquiries where id = :'man'));
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a3';
+do $$ begin
+  begin
+    perform public.set_enquiry_outcome((select id from public.enquiries where source = 'manual'), 'package5');
+    perform pg_temp.check('another coach cannot record the outcome', false);
+  exception when others then perform pg_temp.check('another coach cannot record the outcome', true);
+  end;
+  begin
+    perform public.add_enquiry('{"first_name":"Sneaky"}'::jsonb);
+    perform pg_temp.check('a coach cannot add an enquiry', false);
+  exception when others then perform pg_temp.check('a coach cannot add an enquiry', true);
+  end;
+end $$;
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;

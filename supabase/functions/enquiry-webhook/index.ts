@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
     return json({ error: 'Could not read the form data' }, 400);
   }
 
-  const { fields, externalId } = normalise(payload);
+  const { fields, externalId, answers } = normalise(payload);
   if (!fields.first_name && !fields.email && !fields.parent_name) {
     return json({ error: 'No name or email found in the submission' }, 422);
   }
@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
   const today = new Date().toISOString().slice(0, 10);
   const id = externalId || `auto-${await sha([fields.email, fields.first_name, fields.last_name, today].join('|').toLowerCase())}`;
 
-  const { data, error } = await db.rpc('record_enquiry', { p_external_id: id, p_fields: fields, p_raw: payload });
+  const { data, error } = await db.rpc('record_enquiry', { p_external_id: id, p_fields: fields, p_raw: { answers, payload } });
   if (error) return json({ error: 'Could not save the enquiry' }, 500);
   return json({ ok: true, id: data ?? null, duplicate: data === null });
 });
