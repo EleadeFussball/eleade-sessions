@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 
 const TABS = [
   { href: '/log', label: 'Log', admin: false },
+  { href: '/calendar', label: 'Calendar', admin: false },
   { href: '/players', label: 'Players', admin: false },
   { href: '/week', label: 'My week', admin: false },
   { href: '/monday', label: 'Monday', admin: true },
