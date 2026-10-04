@@ -18,7 +18,21 @@ export function usePlayers(includeInactive = false) {
   }, [includeInactive]);
 
   useEffect(() => { load(); }, [load]);
-  return { players, loading, error, reload: load };
+
+  /** Add a player who isn't on the list yet, and return their id. */
+  const createPlayer = useCallback(async (name: string, mainCoachId?: string | null) => {
+    const { data, error: e } = await supabase.from('players')
+      .insert({ name, main_coach_id: mainCoachId ?? null }).select('id').single();
+    if (e) {
+      throw new Error(e.message.includes('duplicate')
+        ? `A player called ${name} already exists. Search for them instead.`
+        : e.message);
+    }
+    await load();
+    return (data as { id: string }).id;
+  }, [load]);
+
+  return { players, loading, error, reload: load, createPlayer };
 }
 
 export function creditClass(p: Pick<PlayerBalance, 'billing_model' | 'sessions_left'>, threshold = 2): string {

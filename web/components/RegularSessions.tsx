@@ -16,7 +16,7 @@ const FORMATS: Format[] = ['1:1', '2:1', '4:1', 'analysis'];
 
 export function RegularSessions({ playerId }: { playerId: string }) {
   const { coach, coaches, isAdmin } = useAuth();
-  const { players } = usePlayers();
+  const { players, createPlayer } = usePlayers();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [adding, setAdding] = useState(false);
   const [weekday, setWeekday] = useState(0);
@@ -121,7 +121,14 @@ export function RegularSessions({ playerId }: { playerId: string }) {
             <div className="field">
               <span className="fieldlabel">Players (up to {MAX_PLAYERS[format]})</span>
               <PlayerPicker players={players} selected={ids} max={MAX_PLAYERS[format]}
-                            onChange={(next) => setIds(next.includes(playerId) ? next : [playerId, ...next])} />
+                            onChange={(next) => setIds(next.includes(playerId) ? next : [playerId, ...next])}
+                            onCreate={async (name) => {
+                              setErr('');
+                              try {
+                                const id = await createPlayer(name, coachId || coach?.id);
+                                setIds([...ids, id]);
+                              } catch (e) { setErr(errorText(e)); }
+                            }} />
             </div>
           )}
           <div className="row">

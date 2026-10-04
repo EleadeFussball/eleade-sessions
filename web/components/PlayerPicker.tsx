@@ -67,11 +67,14 @@ export function PlayerPicker({ players, selected, max, onChange, onCreate }: Pro
           )}
           {q.trim() && matches.length === 0 && (
             onCreate ? (
-              <div className="mt">
-                <p className="hint">No player called “{q.trim()}” yet. New player, for example an assessment? Type their full name, then add them.</p>
-                <button type="button" className="btn small ghost" disabled={adding || q.trim().split(/\s+/).length < 2}
+              <div className="newplayer">
+                <p className="hint" style={{ marginBottom: 8 }}>
+                  No player called “{q.trim()}” yet.
+                  {q.trim().split(/\s+/).length < 2 && ' Add their surname too, so nobody is mixed up.'}
+                </p>
+                <button type="button" className="btn small" disabled={adding || q.trim().split(/\s+/).length < 2}
                         onClick={async () => { setAdding(true); await onCreate(titleCase(q.trim())); setAdding(false); setQ(''); }}>
-                  {adding ? 'Adding' : `Add “${titleCase(q.trim())}” as a new player`}
+                  {adding ? 'Adding' : `+ Add ${titleCase(q.trim())} as a new player`}
                 </button>
               </div>
             ) : <p className="hint mt">No active player matches “{q.trim()}”.</p>

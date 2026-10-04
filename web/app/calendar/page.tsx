@@ -16,7 +16,7 @@ const LENGTHS = [45, 60, 90, 120];
 
 export default function CalendarPage() {
   const { coach, isAdmin } = useAuth();
-  const { players } = usePlayers();
+  const { players, createPlayer } = usePlayers();
   const [view, setView] = useState<'week' | 'day'>('week');
   const [anchor, setAnchor] = useState(todayISO());
   const [mine, setMine] = useState(true);
@@ -105,7 +105,7 @@ export default function CalendarPage() {
 
       <div ref={panelRef} />
       {slot && (
-        <AddSession slot={slot} players={players} onCancel={() => setSlot(null)}
+        <AddSession slot={slot} players={players} createPlayer={createPlayer} onCancel={() => setSlot(null)}
                     onSaved={() => { setSlot(null); load(); }} onError={setErr} />
       )}
 
@@ -120,8 +120,9 @@ export default function CalendarPage() {
   );
 }
 
-function AddSession({ slot, players, onSaved, onCancel, onError }: {
+function AddSession({ slot, players, createPlayer, onSaved, onCancel, onError }: {
   slot: { day: string; time: string }; players: ReturnType<typeof usePlayers>['players'];
+  createPlayer: ReturnType<typeof usePlayers>['createPlayer'];
   onSaved: () => void; onCancel: () => void; onError: (m: string) => void;
 }) {
   const { coach, coaches, isAdmin } = useAuth();
@@ -194,7 +195,14 @@ function AddSession({ slot, players, onSaved, onCancel, onError }: {
       </div>
       <div className="field">
         <span className="fieldlabel">Player{MAX_PLAYERS[format] > 1 ? `s (up to ${MAX_PLAYERS[format]})` : ''}</span>
-        <PlayerPicker players={players} selected={ids} max={MAX_PLAYERS[format]} onChange={setIds} />
+        <PlayerPicker players={players} selected={ids} max={MAX_PLAYERS[format]} onChange={setIds}
+                      onCreate={async (name) => {
+                        onError('');
+                        try {
+                          const id = await createPlayer(name, coachId || coach?.id);
+                          setIds(MAX_PLAYERS[format] === 1 ? [id] : [...ids, id]);
+                        } catch (e) { onError(errorText(e)); }
+                      }} />
       </div>
       <div className="row">
         <label className="field"><span>Location</span>

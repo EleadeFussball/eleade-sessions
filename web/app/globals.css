@@ -285,3 +285,4 @@ details.panel[open] > summary { border-bottom: 1px solid var(--line); margin-bot
 .ev.armed { transform: scale(1.03); box-shadow: 0 4px 14px rgba(0,0,0,.25); outline: 2px solid var(--ink); z-index: 5; }
 .ev.dragging .ev-time { color: var(--brand-red); }
 .grid-col { touch-action: pan-y; }
+.newplayer { margin-top: 8px; padding: 10px 12px; background: var(--amber-soft); border-radius: var(--radius); }

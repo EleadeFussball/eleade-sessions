@@ -23,7 +23,7 @@ type Saved = { names: string[]; date: string; outcome: Outcome; format: Format; 
 
 export default function LogPage() {
   const { coach, coaches, isAdmin } = useAuth();
-  const { players, reload } = usePlayers();
+  const { players, reload, createPlayer } = usePlayers();
   const [date, setDate] = useState(todayISO());
   const [format, setFormat] = useState<Format>('1:1');
   const [ids, setIds] = useState<string[]>([]);
@@ -73,15 +73,10 @@ export default function LogPage() {
 
   async function addPlayer(name: string) {
     setErr('');
-    const { data, error } = await supabase.from('players')
-      .insert({ name, main_coach_id: coach?.id ?? null }).select('id').single();
-    if (error) {
-      setErr(error.message.includes('duplicate') ? `A player called ${name} already exists. Search for them instead.` : errorText(error));
-      return;
-    }
-    await reload();
-    const id = (data as { id: string }).id;
-    setIds(max === 1 ? [id] : [...ids, id]);
+    try {
+      const id = await createPlayer(name, coach?.id);
+      setIds(max === 1 ? [id] : [...ids, id]);
+    } catch (e) { setErr(errorText(e)); }
   }
 
   async function save(e: React.FormEvent) {
