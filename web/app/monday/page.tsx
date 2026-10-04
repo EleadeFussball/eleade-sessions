@@ -143,7 +143,7 @@ export default function MondayPage() {
       <StripeInbox players={players} onChanged={load} />
 
       <h2>Payments to confirm ({toConfirm.length})</h2>
-      <p className="hint">Assessments, cash sessions and packages the coaches recorded. Check Stripe, your bank account or the cash you collected, then confirm.</p>
+      <p className="hint">Assessments, packages and cash handed to you that the coaches recorded. Check Stripe, your bank account or the cash you collected, then confirm. Cash that coaches keep is taken off their weekly invoice instead.</p>
       {toConfirm.length === 0 ? <p className="empty">Nothing to confirm.</p> : (
         <table className="t">
           <thead><tr><th>Player</th><th>What</th><th className="n">Amount</th><th></th></tr></thead>

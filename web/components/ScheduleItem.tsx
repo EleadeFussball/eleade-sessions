@@ -96,6 +96,7 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
                 <button type="button" aria-pressed={method === 'stripe'} onClick={() => setMethod(method === 'stripe' ? '' : 'stripe')}>Paid by Stripe</button>
               </div>
               {method === 'stripe' && <StripeNote playerIds={o.player_ids ?? []} />}
+              {method === 'cash' && !coach?.salaried && <p className="hint">You keep the cash. It is taken off your weekly invoice automatically.</p>}
               {method === '' && <p className="hint">Leave both off if the session uses package credit.</p>}
             </>
           )}

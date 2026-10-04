@@ -8,7 +8,7 @@ import { addDays, fmtDate, fmtWeek, money, todayISO, weekStart, isoWeek } from '
 import { FORMAT_LABEL, OUTCOME_LABEL, invoiceNo, type CoachInvoice, type Format, type InvoiceLine, type Outcome } from '@/lib/types';
 
 type PayRow = { session_id: string; session_date: string; coach_id: string; coach_name: string;
-  format: Format; outcome: Outcome; players: string | null; pay: number | null; old?: boolean };
+  format: Format; outcome: Outcome; players: string | null; pay: number | null; cash_kept?: number; old?: boolean };
 
 export default function WeekPage() {
   const { coach, coaches, isAdmin } = useAuth();
@@ -83,7 +83,7 @@ export default function WeekPage() {
 
   const name = coaches.find((c) => c.id === coachId)?.name ?? '';
   const rows = [...paid, ...old].sort((a, b) => a.session_date.localeCompare(b.session_date));
-  const total = paid.reduce((t, r) => t + Number(r.pay ?? 0), 0);
+  const total = paid.reduce((t, r) => t + Number(r.pay ?? 0) - Number(r.cash_kept ?? 0), 0);
   const missingRate = paid.some((r) => r.pay === null);
   const byFormat = rows.reduce<Record<string, number>>((m, r) => {
     if (r.outcome !== 'cancelled_in_time') m[r.format] = (m[r.format] ?? 0) + 1;
@@ -144,7 +144,9 @@ export default function WeekPage() {
                   <td>{fmtDate(r.session_date, true)}</td>
                   <td>{r.players}{r.outcome !== 'attended' && <><br /><span className="hint">{OUTCOME_LABEL[r.outcome]}</span></>}</td>
                   <td>{FORMAT_LABEL[r.format]}</td>
-                  {!salaried && <td className="n">{r.old ? <span className="hint">Old invoice</span> : r.pay === null ? 'Rate not set' : money(r.pay)}</td>}
+                  {!salaried && <td className="n">{r.old ? <span className="hint">Old invoice</span> : r.pay === null ? 'Rate not set' : (Number(r.cash_kept ?? 0) > 0
+                    ? <>{money(Number(r.pay) - Number(r.cash_kept))}<br /><span className="hint">Pay {money(r.pay)}, cash kept {money(r.cash_kept ?? 0)}</span></>
+                    : money(r.pay))}</td>}
                 </tr>
               ))}
             </tbody>
@@ -187,7 +189,7 @@ export default function WeekPage() {
               ) : draftNoRate ? (
                 <div className="notice warn">Some session types have no pay rate yet. Jan sets rates on the Team page.</div>
               ) : draftTotal <= 0 ? (
-                <p className="hint">Nothing to pay for this week.</p>
+                <p className="hint">{draftTotal < 0 ? 'You kept more cash than you earned, so the invoice total is below zero. It is not sent now. The difference carries into your next invoice automatically.' : 'Nothing to pay for this week.'}</p>
               ) : (
                 !review ? (
                   <button className="btn block" type="button" onClick={() => setReview(true)}>All sessions logged? Send invoice</button>

@@ -55,6 +55,9 @@ $$ insert into results values (t, coalesce(cond, false), d) $$;
 -- links by email (case-insensitive)
 select pg_temp.check('coach linked to login by email', (select user_id from public.coaches where name='Tyler') = '00000000-0000-0000-0000-0000000000a2');
 
+-- cash kept by coaches is switched on later in this file; keep the older cash tests date-independent
+update public.settings set value = '"2999-01-01"' where key = 'cash_kept_from';
+
 -- ---------- as Tyler ----------
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
@@ -812,6 +815,32 @@ do $$ begin
   exception when others then perform pg_temp.check('a coach cannot add an enquiry', true);
   end;
 end $$;
+
+-- ---------- cash kept by the coach is settled on the invoice ----------
+reset role;
+update public.settings set value = '"2000-01-01"' where key = 'cash_kept_from';
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a4';
+select public.log_session(public.today_sydney(), '00000000-0000-0000-0000-0000000000c4', '1:1', 'attended',
+  array['00000000-0000-0000-0000-0000000000b1']::uuid[], null, null, null, null, null, 'cash') as cashs \gset
+select pg_temp.check('a coach''s cash session needs no check from Jan',
+  (select payment_status = 'confirmed' from public.sessions where id = :'cashs'));
+select pg_temp.check('the pay for the cash session is unchanged and the cash kept is the player''s price',
+  (select pay = 50 and cash_kept = coalesce((select session_price from public.players where id = '00000000-0000-0000-0000-0000000000b1'),
+        (select (value #>> '{}')::numeric from public.settings where key = 'default_session_price'))
+     from public.coach_pay where session_id = :'cashs'));
+select pg_temp.check('the invoice line is pay minus the cash kept, so the total drops',
+  (select amount = 50 - cash_kept from public.invoice_draft('00000000-0000-0000-0000-0000000000c4', public.today_sydney() + 7) d
+     join public.coach_pay cp on cp.session_id = d.session_id where d.session_id = :'cashs'));
+select pg_temp.check('the cash line says how it was worked out',
+  (select description like '%cash $%kept, less pay $50.00%' from public.invoice_draft('00000000-0000-0000-0000-0000000000c4', public.today_sydney() + 7) where session_id = :'cashs'));
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select public.log_session(public.today_sydney(), '00000000-0000-0000-0000-0000000000c1', '1:1', 'attended',
+  array['00000000-0000-0000-0000-0000000000b4']::uuid[], null, null, null, null, null, 'cash') as janis \gset
+select pg_temp.check('a salaried coach''s cash still waits for Jan to confirm',
+  (select payment_status = 'awaiting' from public.sessions where id = :'janis'));
+select pg_temp.check('a salaried coach has nothing deducted',
+  (select cash_kept = 0 from public.coach_pay where session_id = :'janis'));
 
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;

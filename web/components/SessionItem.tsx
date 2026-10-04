@@ -54,6 +54,9 @@ export function SessionItem({ s, onChanged, showPlayers = false }: { s: SessionR
           {(() => {
             const what = s.format === 'assessment' ? '$130 payment'
               : s.payment_method ? `${PAYMENT_LABEL[s.payment_method]} payment` : 'Payment';
+            if (s.payment_method === 'cash' && s.payment_status === 'confirmed' && coaches.find((c) => c.id === s.coach_id)?.salaried === false) {
+              return <span className="tag turf">Cash kept, taken off invoice</span>;
+            }
             return s.payment_status === 'awaiting'
               ? <span className="tag amber">{what} to check</span>
               : <span className="tag turf">{what} checked</span>;

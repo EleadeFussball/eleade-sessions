@@ -204,7 +204,9 @@ export default function LogPage() {
               </button>
             </div>
             {payMethod === 'stripe' && <StripeNote playerIds={ids} />}
-            {payMethod === 'cash' && <p className="hint mt">Paid in cash: no package credit is used and it isn’t added to a weekly transfer. Jan confirms the cash.</p>}
+            {payMethod === 'cash' && (coach?.salaried
+              ? <p className="hint mt">Paid in cash: no package credit is used and it isn’t added to a weekly transfer. Jan confirms the cash.</p>
+              : <p className="hint mt">Paid in cash: you keep the cash. The amount is taken off your weekly invoice automatically, so there is nothing to hand to Jan. No package credit is used.</p>)}
             {payMethod === '' && <p className="hint mt">Leave both off if the session uses package credit. Tap Paid cash or Paid by Stripe if the parents paid for this session on its own.</p>}
           </div>
         )}
