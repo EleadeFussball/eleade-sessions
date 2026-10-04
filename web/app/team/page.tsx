@@ -4,6 +4,7 @@ import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import type { Coach } from '@/lib/types';
 import { digits, validAbn } from '@/lib/bank';
+import { EnquiryWebhook } from '@/components/EnquiryWebhook';
 
 type Rates = { coach_id: string; one_to_one: number | null; two_to_one: number; four_to_one: number; analysis: number; testing: number; assessment: number | null };
 const RATE_FIELDS: [keyof Omit<Rates, 'coach_id'>, string][] = [
@@ -44,6 +45,7 @@ export default function TeamPage() {
         {coaches.map((c) => <CoachRow key={c.id} c={c} r={rates[c.id]} onSaved={async (m) => { setMsg(m); setErr(''); await refreshCoaches(); load(); }} onError={setErr} />)}
       </ul>
       <BusinessDetails />
+      <EnquiryWebhook />
       <details className="panel">
         <summary>Add a coach</summary>
         <form onSubmit={addCoach}>
@@ -118,14 +120,16 @@ function BusinessDetails() {
   const [userId, setUserId] = useState('000000');
   const [remitter, setRemitter] = useState('ELEADE');
   const [stripeLink, setStripeLink] = useState('');
+  const [sessionLink, setSessionLink] = useState('');
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
 
   useEffect(() => {
-    supabase.from('settings').select('key, value').in('key', ['business_name', 'business_abn', 'stripe_assessment_link']).then(({ data }) => {
+    supabase.from('settings').select('key, value').in('key', ['business_name', 'business_abn', 'stripe_assessment_link', 'stripe_session_link']).then(({ data }) => {
       for (const r of (data as { key: string; value: string }[]) ?? []) {
         if (r.key === 'business_name') setName(r.value ?? '');
         else if (r.key === 'business_abn') setAbn(r.value ?? '');
+        else if (r.key === 'stripe_session_link') setSessionLink(r.value ?? '');
         else setStripeLink(r.value ?? '');
       }
     });
@@ -144,8 +148,10 @@ function BusinessDetails() {
     if (n && (n.length < 4 || n.length > 9)) { setErr('An account number has 4 to 9 digits.'); return; }
     const sl = stripeLink.trim();
     if (sl && !/^https:\/\/(buy\.stripe\.com|checkout\.stripe\.com)\//.test(sl)) { setErr('The Stripe link should start with https://buy.stripe.com/'); return; }
+    const ss = sessionLink.trim();
+    if (ss && !/^https:\/\/(buy\.stripe\.com|checkout\.stripe\.com)\//.test(ss)) { setErr('The Stripe session link should start with https://buy.stripe.com/'); return; }
     if (u.length !== 6) { setErr('The User ID has 6 digits. Use 000000 if NAB has not given you one.'); return; }
-    const s1 = await supabase.from('settings').upsert([{ key: 'business_name', value: name.trim() || 'Eleade' }, { key: 'business_abn', value: a }, { key: 'stripe_assessment_link', value: sl }]);
+    const s1 = await supabase.from('settings').upsert([{ key: 'business_name', value: name.trim() || 'Eleade' }, { key: 'business_abn', value: a }, { key: 'stripe_assessment_link', value: sl }, { key: 'stripe_session_link', value: ss }]);
     if (s1.error) { setErr(errorText(s1.error)); return; }
     const s2 = await supabase.from('bank_file_settings').update({
       bsb: b || null, account_number: n || null, account_name: acctName.trim() || null, user_id_number: u,
@@ -178,6 +184,9 @@ function BusinessDetails() {
         <label className="field"><span>Stripe payment link for assessments</span>
           <input type="url" value={stripeLink} onChange={(e) => setStripeLink(e.target.value)} placeholder="https://buy.stripe.com/..." /></label>
         <p className="hint">Coaches send this from the player&apos;s page. Each link is tagged with the player, so the payment confirms their assessment automatically.</p>
+        <label className="field"><span>Stripe payment link for single sessions <span className="hint">(optional)</span></span>
+          <input type="url" value={sessionLink} onChange={(e) => setSessionLink(e.target.value)} placeholder="https://buy.stripe.com/..." /></label>
+        <p className="hint">Add it and coaches can send a session link that is tagged with the player too. Without it, a session payment arrives untagged and you say who paid on the Monday page.</p>
         {err && <div className="notice err" role="alert">{err}</div>}
         {msg && <div className="notice ok" role="status">{msg}</div>}
         <button className="btn small">Save details</button>

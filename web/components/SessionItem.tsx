@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { fmtDate } from '@/lib/dates';
+import { StripeLink } from '@/components/StripeLink';
 import { FORMAT_LABEL, OUTCOME_LABEL, PAYMENT_LABEL, type Outcome, type PaymentMethod, type SessionRow } from '@/lib/types';
 
 const OUTCOMES: Outcome[] = ['attended', 'cancelled_in_time', 'cancelled_late', 'no_show'];
@@ -59,6 +60,7 @@ export function SessionItem({ s, onChanged, showPlayers = false }: { s: SessionR
           })()}
         </div>
       )}
+      {s.payment_status === 'awaiting' && !s.imported && <StripeLink sessionId={s.id} onLinked={onChanged} />}
       {!editing ? (
         <>
           {(s.topic || s.observations || s.improve) && (

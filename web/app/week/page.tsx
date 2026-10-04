@@ -21,6 +21,10 @@ export default function WeekPage() {
   const [invoices, setInvoices] = useState<CoachInvoice[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [review, setReview] = useState(false);
+  const [ticked, setTicked] = useState(false);
+  const [details, setDetails] = useState<{ abn: string | null; bsb: string | null; account_number: string | null } | null | undefined>(undefined);
+  const [prev, setPrev] = useState<{ total: number; end: string } | null>(null);
   const router = useRouter();
 
   useEffect(() => { if (coach && !coachId) setCoachId(coach.id); }, [coach, coachId]);
@@ -34,6 +38,25 @@ export default function WeekPage() {
     setInvoices((i.data as CoachInvoice[]) ?? []);
   }, [coachId, start]);
   useEffect(() => { loadInvoices(); }, [loadInvoices]);
+  useEffect(() => { setReview(false); setTicked(false); setErr(''); }, [coachId, start]);
+
+  // Bank details are needed before an invoice can be sent.
+  useEffect(() => {
+    if (!coachId) return;
+    supabase.from('coach_details').select('abn, bsb, account_number').eq('coach_id', coachId).maybeSingle()
+      .then(({ data }) => setDetails((data as typeof details) ?? null));
+  }, [coachId]);
+
+  // A reminder on the current week when last week's invoice has not been sent yet.
+  useEffect(() => {
+    if (!coachId) return;
+    const end = addDays(weekStart(todayISO()), -1);
+    supabase.rpc('invoice_draft', { p_coach_id: coachId, p_until: end }).then(({ data }) => {
+      const rows = (data as InvoiceLine[]) ?? [];
+      const total = rows.reduce((t, l) => t + Number(l.amount), 0);
+      setPrev(rows.length > 0 && total > 0 ? { total, end } : null);
+    });
+  }, [coachId, invoices]);
 
   useEffect(() => {
     if (!coachId) return;
@@ -76,7 +99,6 @@ export default function WeekPage() {
   const thisWeeks = invoices.filter((i) => i.period_end === weekEnd);
 
   async function submit() {
-    if (!window.confirm(`Submit your invoice for ${money(draftTotal)} to Jan?`)) return;
     setBusy(true); setErr('');
     const { data, error } = await supabase.rpc('submit_invoice', { p_coach_id: coachId, p_until: weekEnd });
     setBusy(false);
@@ -99,6 +121,13 @@ export default function WeekPage() {
           </select>
         )}
       </div>
+
+      {prev && !salaried && start !== addDays(prev.end, -6) && coachId === coach?.id && (
+        <div className="notice warn">
+          Your invoice for week {isoWeek(addDays(prev.end, -6))} is ready to send ({money(prev.total)}).{' '}
+          <button type="button" className="linkbtn" onClick={() => setStart(addDays(prev.end, -6))}>Review and send</button>
+        </div>
+      )}
 
       {loading ? <p className="empty">Loading</p> : rows.length === 0 ? (
         <p className="empty">No sessions logged this week. Sessions you log appear here straight away.</p>
@@ -160,7 +189,26 @@ export default function WeekPage() {
               ) : draftTotal <= 0 ? (
                 <p className="hint">Nothing to pay for this week.</p>
               ) : (
-                <button className="btn block" type="button" disabled={busy} onClick={submit}>{busy ? 'Submitting' : `Submit invoice to Jan (${money(draftTotal)})`}</button>
+                !review ? (
+                  <button className="btn block" type="button" onClick={() => setReview(true)}>All sessions logged? Send invoice</button>
+                ) : (
+                  <div className="panel-form">
+                    <h3 style={{ marginTop: 0 }}>Check before you send</h3>
+                    <p>Invoice for week {isoWeek(start)}: <strong>{money(draftTotal)}</strong> ({draft.length} {draft.length === 1 ? 'line' : 'lines'}, no GST).</p>
+                    <p className="hint">Once it is sent, Jan pays it as it is. Anything you forgot to log goes on your next invoice as a separate line.</p>
+                    {(!details?.abn || !details.bsb || !details.account_number) && (
+                      <div className="notice warn">Your ABN and bank details are missing. Add them on the <Link href="/account">Account</Link> page first, then come back.</div>
+                    )}
+                    <label className="check">
+                      <input type="checkbox" checked={ticked} onChange={(e) => setTicked(e.target.checked)} />
+                      <span>I have logged every session I coached this week, including cancellations and no-shows, and the list above is correct.</span>
+                    </label>
+                    <div className="row mt">
+                      <button className="btn small" type="button" disabled={busy || !ticked} onClick={submit}>{busy ? 'Sending' : 'Yes, send invoice to Jan'}</button>
+                      <button className="btn small ghost" type="button" disabled={busy} onClick={() => { setReview(false); setTicked(false); }}>Not yet</button>
+                    </div>
+                  </div>
+                )
               )}
               <p className="hint mt">Your invoice comes from these entries, so it always matches what Jan sees. Your ABN and bank details come from the <Link href="/account">Account</Link> page.</p>
             </>

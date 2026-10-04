@@ -6,17 +6,18 @@ import { useAuth } from '@/lib/auth';
 import { addDays, fmtDate, todayISO } from '@/lib/dates';
 import { normaliseTime } from '@/lib/time';
 import { FORMAT_LABEL, OUTCOME_LABEL, type Outcome } from '@/lib/types';
-import { cancelEntry, confirmEntry, hhmm, moveEntry, timeRange, type ScheduleEntry } from '@/lib/schedule';
+import { cancelEntry, canComplete, completeFrom, confirmEntry, hhmm, moveEntry, timeRange, type ScheduleEntry } from '@/lib/schedule';
+import { StripeNote } from '@/components/StripeNote';
 
 /** One planned session, with the actions a coach needs: done, cancelled, moved, removed. */
-export function ScheduleItem({ o, onDone, showDay = false, showCoach = false }:
-  { o: ScheduleEntry; onDone: () => void; showDay?: boolean; showCoach?: boolean }) {
+export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, startMode = '' }:
+  { o: ScheduleEntry; onDone: () => void; showDay?: boolean; showCoach?: boolean; startMode?: '' | 'done' }) {
   const { coach, coaches, isAdmin } = useAuth();
-  const [mode, setMode] = useState<'' | 'done' | 'cancel' | 'move'>('');
+  const [mode, setMode] = useState<'' | 'done' | 'cancel' | 'move'>(startMode);
   const [topic, setTopic] = useState('');
   const [obs, setObs] = useState('');
   const [improve, setImprove] = useState('');
-  const [cash, setCash] = useState(false);
+  const [method, setMethod] = useState<'' | 'cash' | 'stripe'>('');
   const [cancelKind, setCancelKind] = useState<Outcome>('cancelled_in_time');
   const [newDate, setNewDate] = useState(o.session_date);
   const [newTime, setNewTime] = useState(hhmm(o.start_time));
@@ -26,11 +27,12 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false }:
 
   const future = o.session_date > todayISO();
   const mine = isAdmin || o.coach_id === coach?.id;
+  const completable = canComplete(o, isAdmin);
   const coachName = coaches.find((c) => c.id === o.coach_id)?.name ?? '';
 
   async function confirm(outcome: Outcome) {
     setBusy(true); setErr('');
-    const { error } = await confirmEntry(o, outcome, { topic, obs, improve, cash });
+    const { error } = await confirmEntry(o, outcome, { topic, obs, improve, method: outcome === 'attended' ? method : '' });
     setBusy(false);
     if (error) setErr(errorText(error)); else { setMode(''); onDone(); }
   }
@@ -74,7 +76,7 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false }:
       )}
       {o.kind !== 'logged' && !o.session_id && mode === '' && mine && (
         <div className="row mt" style={{ flexWrap: 'wrap' }}>
-          <button type="button" className="btn small" disabled={future} onClick={() => setMode('done')}>Done</button>
+          <button type="button" className="btn small" disabled={!completable} onClick={() => setMode('done')}>Completed</button>
           <button type="button" className="btn small ghost" disabled={future} onClick={() => setMode('cancel')}>Cancelled</button>
           <button type="button" className="btn small ghost" onClick={() => setMode('move')}>Move</button>
           {o.kind === 'once' && <button type="button" className="btn small ghost" disabled={busy} onClick={remove}>Remove</button>}
@@ -87,9 +89,17 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false }:
           <label className="field"><span>What you worked on</span><textarea value={topic} onChange={(e) => setTopic(e.target.value)} /></label>
           <label className="field"><span>How it went</span><textarea value={obs} onChange={(e) => setObs(e.target.value)} /></label>
           <label className="field"><span>Next session</span><textarea value={improve} onChange={(e) => setImprove(e.target.value)} style={{ minHeight: 64 }} /></label>
-          <div className="seg" style={{ marginBottom: 12 }}>
-            <button type="button" aria-pressed={cash} onClick={() => setCash(!cash)}>Paid cash</button>
-          </div>
+          {o.format !== 'testing' && (
+            <>
+              <div className="seg" style={{ marginBottom: 6 }}>
+                <button type="button" aria-pressed={method === 'cash'} onClick={() => setMethod(method === 'cash' ? '' : 'cash')}>Paid cash</button>
+                <button type="button" aria-pressed={method === 'stripe'} onClick={() => setMethod(method === 'stripe' ? '' : 'stripe')}>Paid by Stripe</button>
+              </div>
+              {method === 'stripe' && <StripeNote playerIds={o.player_ids ?? []} />}
+              {method === '' && <p className="hint">Leave both off if the session uses package credit.</p>}
+            </>
+          )}
+          <div style={{ height: 8 }} />
           <div className="row">
             <button type="button" className="btn small" disabled={busy} onClick={() => confirm('attended')}>{busy ? 'Saving' : 'Confirm session'}</button>
             <button type="button" className="btn small ghost" onClick={() => setMode('')}>Back</button>
@@ -146,7 +156,13 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false }:
       )}
 
       {err && <div className="notice err" role="alert">{err}</div>}
-      {future && !o.session_id && mode === '' && mine && <p className="hint">You can confirm it once it has happened.</p>}
+      {!completable && !o.session_id && o.kind !== 'logged' && mode === '' && mine && (
+        <p className="hint">
+          {future || !o.start_time
+            ? 'You can mark it as completed once it has happened.'
+            : `You can mark it as completed from ${completeFrom(o)}, five minutes after it ends. If it was cancelled or the player did not show, use Cancelled.`}
+        </p>
+      )}
       {!mine && !o.session_id && <p className="hint">{coachName}&apos;s session.</p>}
       {o.player_ids?.length === 1 && <p className="hint" style={{ marginTop: 6 }}><Link href={`/players/${o.player_ids[0]}`}>Open player</Link></p>}
     </li>

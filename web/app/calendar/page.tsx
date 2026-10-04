@@ -1,10 +1,12 @@
 'use client';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { usePlayers } from '@/lib/usePlayers';
 import { PlayerPicker } from '@/components/PlayerPicker';
 import { ScheduleItem } from '@/components/ScheduleItem';
+import { Sheet } from '@/components/Sheet';
+import { useLastLocation } from '@/lib/useLastLocation';
 import { CalendarGrid } from '@/components/CalendarGrid';
 import { addDays, fmtDate, isoWeek, todayISO, weekStart } from '@/lib/dates';
 import { normaliseTime } from '@/lib/time';
@@ -15,17 +17,18 @@ const FORMATS: Format[] = ['1:1', '2:1', '4:1', 'analysis', 'assessment', 'testi
 const LENGTHS = [45, 60, 90, 120];
 
 export default function CalendarPage() {
-  const { coach, isAdmin } = useAuth();
+  const { coach, coaches, isAdmin } = useAuth();
   const { players, createPlayer } = usePlayers();
   const [view, setView] = useState<'week' | 'day'>('week');
   const [anchor, setAnchor] = useState(todayISO());
-  const [mine, setMine] = useState(true);
+  // whose calendar: 'me' (always first), 'all', or one coach's id (Jan only)
+  const [who, setWho] = useState<string>('me');
+  const [openMode, setOpenMode] = useState<'' | 'done'>('');
   const [items, setItems] = useState<ScheduleEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [slot, setSlot] = useState<{ day: string; time: string } | null>(null);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [err, setErr] = useState('');
-  const panelRef = useRef<HTMLDivElement>(null);
 
   // A phone shows one day, a computer the whole week.
   useEffect(() => {
@@ -49,14 +52,14 @@ export default function CalendarPage() {
   }, [from, to]);
   useEffect(() => { load(); }, [load]);
 
-  const shown = useMemo(
-    () => (mine && coach ? items.filter((o) => o.coach_id === coach.id) : items),
-    [items, mine, coach],
-  );
+  const mine = who === 'me';
+  const shown = useMemo(() => {
+    if (who === 'all') return items;
+    const id = who === 'me' ? coach?.id : who;
+    return id ? items.filter((o) => o.coach_id === id) : items;
+  }, [items, who, coach]);
   const open = shown.find((o) => entryKey(o) === openKey) ?? null;
-  useEffect(() => {
-    if (slot || open) panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [slot, open]);
+  const viewing = who === 'all' ? '' : who === 'me' ? coach?.id ?? '' : who;
   const step = view === 'day' ? 1 : 7;
   const today = todayISO();
 
@@ -81,10 +84,16 @@ export default function CalendarPage() {
         </button>
       </div>
       <div className="row" style={{ marginBottom: 10, flexWrap: 'wrap' }}>
-        {coach && (
+        {isAdmin ? (
+          <select value={who} onChange={(e) => setWho(e.target.value)} aria-label="Whose calendar" style={{ flex: '1 1 180px' }}>
+            <option value="me">My calendar</option>
+            <option value="all">All coaches</option>
+            {coaches.filter((c) => c.active && c.id !== coach?.id).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        ) : coach && (
           <div className="seg" style={{ flex: '1 1 180px' }}>
-            <button type="button" aria-pressed={mine} onClick={() => setMine(true)}>Mine</button>
-            <button type="button" aria-pressed={!mine} onClick={() => setMine(false)}>All coaches</button>
+            <button type="button" aria-pressed={mine} onClick={() => setWho('me')}>Mine</button>
+            <button type="button" aria-pressed={!mine} onClick={() => setWho('all')}>All coaches</button>
           </div>
         )}
         <div className="seg" style={{ flex: '0 1 150px' }}>
@@ -97,33 +106,36 @@ export default function CalendarPage() {
       {loading ? <p className="empty">Loading</p> : (
         <CalendarGrid
           days={days} entries={shown} selected={openKey}
-          onPickSlot={(day, time) => { setOpenKey(null); setSlot({ day, time }); setErr(''); }}
-          onPickEntry={(o) => { setSlot(null); setOpenKey(entryKey(o) === openKey ? null : entryKey(o)); }}
+          onPickSlot={(day, time) => { setOpenKey(null); setOpenMode(''); setSlot({ day, time }); setErr(''); }}
+          onPickEntry={(o) => { setSlot(null); setOpenMode(''); setOpenKey(o && entryKey(o)); }}
+          onComplete={(o) => { setSlot(null); setOpenMode('done'); setOpenKey(entryKey(o)); }}
           onMove={onMove}
         />
       )}
 
-      <div ref={panelRef} />
       {slot && (
-        <AddSession slot={slot} players={players} createPlayer={createPlayer} onCancel={() => setSlot(null)}
-                    onSaved={() => { setSlot(null); load(); }} onError={setErr} />
+        <Sheet title="New session" onClose={() => setSlot(null)}>
+          <AddSession slot={slot} players={players} createPlayer={createPlayer} defaultCoach={viewing}
+                      onCancel={() => setSlot(null)} onSaved={() => { setSlot(null); load(); }} />
+        </Sheet>
       )}
 
       {open && (
-        <div className="panel" style={{ padding: '0 14px' }}>
+        <Sheet title="Session" onClose={() => { setOpenKey(null); setOpenMode(''); }}>
           <ul className="list" style={{ borderTop: 0 }}>
-            <ScheduleItem o={open} onDone={() => { setOpenKey(null); load(); }} showDay showCoach={!mine || isAdmin} />
+            <ScheduleItem key={entryKey(open) + openMode} o={open} startMode={openMode} showDay showCoach={!mine || isAdmin}
+                          onDone={() => { setOpenKey(null); setOpenMode(''); load(); }} />
           </ul>
-        </div>
+        </Sheet>
       )}
     </>
   );
 }
 
-function AddSession({ slot, players, createPlayer, onSaved, onCancel, onError }: {
-  slot: { day: string; time: string }; players: ReturnType<typeof usePlayers>['players'];
+function AddSession({ slot, players, createPlayer, defaultCoach, onSaved, onCancel }: {
+  slot: { day: string; time: string }; players: ReturnType<typeof usePlayers>['players']; defaultCoach: string;
   createPlayer: ReturnType<typeof usePlayers>['createPlayer'];
-  onSaved: () => void; onCancel: () => void; onError: (m: string) => void;
+  onSaved: () => void; onCancel: () => void;
 }) {
   const { coach, coaches, isAdmin } = useAuth();
   const [time, setTime] = useState(slot.time);
@@ -133,10 +145,13 @@ function AddSession({ slot, players, createPlayer, onSaved, onCancel, onError }:
   const [location, setLocation] = useState('');
   const [note, setNote] = useState('');
   const [weekly, setWeekly] = useState(false);
-  const [coachId, setCoachId] = useState(coach?.id ?? '');
+  const [coachId, setCoachId] = useState(defaultCoach || coach?.id || '');
   const [busy, setBusy] = useState(false);
+  const [localErr, setLocalErr] = useState('');
+  const onError = setLocalErr;
 
   useEffect(() => { setTime(slot.time); }, [slot.time, slot.day]);
+  const loc = useLastLocation(ids[0], setLocation);
 
   function pickFormat(f: Format) {
     setFormat(f);
@@ -170,11 +185,11 @@ function AddSession({ slot, players, createPlayer, onSaved, onCancel, onError }:
   }
 
   return (
-    <form onSubmit={save} className="panel-form mt">
+    <form onSubmit={save} className="sheet-form">
       <h2 style={{ marginTop: 0 }}>New session · {fmtDate(slot.day, true)}</h2>
       <div className="row">
         <label className="field" style={{ flex: '0 0 104px' }}><span>Start</span>
-          <input type="text" inputMode="numeric" value={time} autoFocus
+          <input type="text" inputMode="numeric" value={time}
                  onChange={(e) => setTime(e.target.value)} onBlur={() => setTime(normaliseTime(time) || time)} /></label>
         <div className="field">
           <span className="fieldlabel">Length</span>
@@ -206,7 +221,7 @@ function AddSession({ slot, players, createPlayer, onSaved, onCancel, onError }:
       </div>
       <div className="row">
         <label className="field"><span>Location</span>
-          <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Moore Park" /></label>
+          <input type="text" value={location} onChange={(e) => loc.edit(e.target.value)} placeholder="e.g. Moore Park" /></label>
         {!weekly && (
           <label className="field"><span>Note <span className="hint">(optional)</span></span>
             <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Meet at the car park" /></label>
@@ -222,6 +237,7 @@ function AddSession({ slot, players, createPlayer, onSaved, onCancel, onError }:
             {coaches.filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select></label>
       )}
+      {localErr && <div className="notice err" role="alert">{localErr}</div>}
       <div className="row">
         <button className="btn small" disabled={busy}>{busy ? 'Saving' : `Add at ${hhmm(normaliseTime(time) || time)}`}</button>
         <button type="button" className="btn small ghost" onClick={onCancel}>Cancel</button>

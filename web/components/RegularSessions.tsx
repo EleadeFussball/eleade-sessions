@@ -4,6 +4,7 @@ import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { usePlayers } from '@/lib/usePlayers';
 import { PlayerPicker } from '@/components/PlayerPicker';
+import { useLastLocation } from '@/lib/useLastLocation';
 import { fmtDate, todayISO } from '@/lib/dates';
 import { normaliseTime } from '@/lib/time';
 import { FORMAT_LABEL, MAX_PLAYERS, type Format } from '@/lib/types';
@@ -24,6 +25,7 @@ export function RegularSessions({ playerId }: { playerId: string }) {
   const [format, setFormat] = useState<Format>('1:1');
   const [ids, setIds] = useState<string[]>([playerId]);
   const [location, setLocation] = useState('');
+  const loc = useLastLocation(ids[0], setLocation);
   const [startsOn, setStartsOn] = useState(todayISO());
   const [coachId, setCoachId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -109,7 +111,7 @@ export function RegularSessions({ playerId }: { playerId: string }) {
               <input type="text" inputMode="numeric" value={time} placeholder="e.g. 630" onChange={(e) => setTime(e.target.value)}
                      onBlur={() => setTime(normaliseTime(time) || time)} /></label>
             <label className="field"><span>Location</span>
-              <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Moore Park" /></label>
+              <input type="text" value={location} onChange={(e) => loc.edit(e.target.value)} placeholder="e.g. Moore Park" /></label>
           </div>
           <div className="field">
             <span className="fieldlabel">Session type</span>

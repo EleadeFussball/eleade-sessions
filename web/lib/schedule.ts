@@ -36,8 +36,8 @@ export async function loadSchedule(from: string, to: string): Promise<ScheduleEn
   return (data as ScheduleEntry[]) ?? [];
 }
 
-export function confirmEntry(o: ScheduleEntry, outcome: Outcome, notes: { topic?: string; obs?: string; improve?: string; cash?: boolean }) {
-  const payment = notes.cash && outcome !== 'cancelled_in_time' ? 'cash' : null;
+export function confirmEntry(o: ScheduleEntry, outcome: Outcome, notes: { topic?: string; obs?: string; improve?: string; method?: '' | 'cash' | 'stripe' }) {
+  const payment = notes.method && outcome !== 'cancelled_in_time' ? notes.method : null;
   return o.kind === 'regular'
     ? supabase.rpc('confirm_plan_session', {
         p_plan_id: o.ref_id, p_plan_date: o.plan_date, p_outcome: outcome,
@@ -74,4 +74,35 @@ export const timeOf = (mins: number) =>
 
 export function cancelEntry(o: ScheduleEntry) {
   return supabase.rpc('cancel_booking', { p_booking_id: o.ref_id });
+}
+
+/** Date and minutes since midnight in Sydney, whatever the phone's own clock zone is. */
+export function sydneyNow(): { date: string; mins: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(new Date());
+  const g = (type: string) => parts.find((p) => p.type === type)?.value ?? '0';
+  return { date: `${g('year')}-${g('month')}-${g('day')}`, mins: (Number(g('hour')) % 24) * 60 + Number(g('minute')) };
+}
+
+/** The time from which a session can be marked as completed: five minutes after it ends. */
+export function completeFrom(o: Pick<ScheduleEntry, 'start_time' | 'minutes'>): string {
+  const s = minutesOf(o.start_time);
+  return s === null ? '' : timeOf((s + o.minutes + 5) % 1440);
+}
+
+/** A planned session can be marked completed once it is over (Jan any time on or after the day). */
+export function canComplete(o: ScheduleEntry, isAdmin: boolean): boolean {
+  if (o.session_id || o.kind === 'logged') return false;
+  const now = sydneyNow();
+  if (o.session_date > now.date) return false;
+  if (isAdmin || !o.start_time || o.session_date < now.date) return true;
+  return now.mins >= (minutesOf(o.start_time) ?? 0) + o.minutes + 5;
+}
+
+/** Where this player was last coached, or an empty string. */
+export async function lastLocation(playerId: string): Promise<string> {
+  const { data } = await supabase.rpc('last_location', { p_player_id: playerId });
+  return typeof data === 'string' ? data : '';
 }

@@ -7,9 +7,9 @@ import { usePlayers } from '@/lib/usePlayers';
 import { addDays, fmtDate, fmtWeek, money, num, todayISO, weekStart, isoWeek } from '@/lib/dates';
 import { invoiceNo, type CoachInvoice, type PlayerBalance } from '@/lib/types';
 import { buildAba, type AbaPayer } from '@/lib/bank';
+import { StripeInbox } from '@/components/StripeInbox';
 
 type Expiring = { player_id: string; name: string; family: string | null; package_name: string | null; expires_on: string; days_left: number; sessions_left: number | null; analyses_left: number | null };
-type Unmatched = { id: string; amount_total: number; paid_at: string; customer_name: string | null; customer_email: string | null };
 type Missing = { player_id: string; name: string; main_coach_id: string | null; last_logged: string | null };
 type Late = { session_id: string; session_date: string; logged_on: string; coach_name: string; days_late: number };
 type Payg = { player_id: string; name: string; week_start: string; sessions: number; owed: number; paid: number; outstanding: number };
@@ -29,15 +29,13 @@ export default function MondayPage() {
   const [unconfirmed, setUnconfirmed] = useState(0);
   const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
   const [err, setErr] = useState('');
-  const [unmatched, setUnmatched] = useState<Unmatched[]>([]);
-  const [assignTo, setAssignTo] = useState<Record<string, string>>({});
   const { players } = usePlayers();
   const [expiring, setExpiring] = useState<Expiring[]>([]);
   const [toPay, setToPay] = useState<CoachInvoice[]>([]);
   const [bank, setBank] = useState<AbaPayer & { bsb: string | null; account_number: string | null; account_name: string | null } | null>(null);
 
   const load = useCallback(async () => {
-    const [b, m, l, g, p, c, inv, bk, ex, um] = await Promise.all([
+    const [b, m, l, g, p, c, inv, bk, ex] = await Promise.all([
       supabase.from('player_balances').select('*').eq('active', true).eq('billing_model', 'package').order('sessions_left'),
       supabase.from('missing_sessions').select('*').order('name'),
       supabase.from('late_logs').select('*').gte('session_date', addDays(lastWeek, -7)).order('session_date', { ascending: false }),
@@ -47,9 +45,7 @@ export default function MondayPage() {
       supabase.from('coach_invoices').select('*').eq('status', 'submitted').order('coach_name').order('number'),
       supabase.from('bank_file_settings').select('*').maybeSingle(),
       supabase.from('expiring_packages').select('*').order('days_left'),
-      supabase.from('stripe_payments').select('id, amount_total, paid_at, customer_name, customer_email').is('player_id', null).order('paid_at'),
     ]);
-    setUnmatched((um.data as Unmatched[]) ?? []);
     setExpiring((ex.data as Expiring[]) ?? []);
     setToPay((inv.data as CoachInvoice[]) ?? []);
     setBank(bk.data as typeof bank);
@@ -74,13 +70,6 @@ export default function MondayPage() {
       ? supabase.from('sessions').update({ payment_status: 'confirmed' }).eq('id', r.item_id)
       : supabase.from('credit_ledger').update({ payment_status: 'confirmed' }).eq('id', r.item_id);
     const { error } = await q;
-    if (error) setErr(errorText(error)); else load();
-  }
-
-  async function assign(u: Unmatched) {
-    const pid = assignTo[u.id];
-    if (!pid) { setErr('Choose the player this payment is for.'); return; }
-    const { error } = await supabase.rpc('assign_stripe_payment', { p_payment_id: u.id, p_player_id: pid });
     if (error) setErr(errorText(error)); else load();
   }
 
@@ -151,27 +140,7 @@ export default function MondayPage() {
         </>
       )}
 
-      {unmatched.length > 0 && (
-        <>
-          <h2>Stripe payments without a player ({unmatched.length})</h2>
-          <p className="hint">Paid through the plain Stripe link, so the app couldn&apos;t tell which player it was for. Choose the player, and their assessment is marked as paid.</p>
-          <table className="t">
-            <tbody>{unmatched.map((u) => (
-              <tr key={u.id}>
-                <td>{money(u.amount_total)}<br /><span className="hint">{fmtDate(u.paid_at.slice(0, 10))}</span></td>
-                <td>{u.customer_name ?? 'No name'}<br /><span className="hint">{u.customer_email ?? ''}</span></td>
-                <td>
-                  <select value={assignTo[u.id] ?? ''} onChange={(e) => setAssignTo({ ...assignTo, [u.id]: e.target.value })} aria-label="Player">
-                    <option value="">Choose player</option>
-                    {players.map((pl) => <option key={pl.player_id} value={pl.player_id}>{pl.name}</option>)}
-                  </select>
-                  <button className="btn small ghost mt" type="button" onClick={() => assign(u)}>Assign</button>
-                </td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </>
-      )}
+      <StripeInbox players={players} onChanged={load} />
 
       <h2>Payments to confirm ({toConfirm.length})</h2>
       <p className="hint">Assessments, cash sessions and packages the coaches recorded. Check Stripe, your bank account or the cash you collected, then confirm.</p>

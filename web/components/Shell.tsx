@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
@@ -9,6 +9,7 @@ const TABS = [
   { href: '/log', label: 'Log', admin: false },
   { href: '/calendar', label: 'Calendar', admin: false },
   { href: '/players', label: 'Players', admin: false },
+  { href: '/enquiries', label: 'Enquiries', admin: false },
   { href: '/week', label: 'My week', admin: false },
   { href: '/monday', label: 'Monday', admin: true },
   { href: '/stats', label: 'Stats', admin: true },
@@ -20,6 +21,17 @@ export function Shell({ children }: { children: ReactNode }) {
   const path = usePathname();
   const router = useRouter();
   const isLogin = path === '/login';
+  const [newEnquiries, setNewEnquiries] = useState(0);
+
+  // Jan sees how many enquiries still need a coach; a coach sees how many are waiting for them.
+  useEffect(() => {
+    if (!coach) return;
+    let alive = true;
+    supabase.from('enquiries').select('id', { count: 'exact', head: true })
+      .eq('status', isAdmin ? 'new' : 'assigned')
+      .then(({ count }) => { if (alive) setNewEnquiries(count ?? 0); });
+    return () => { alive = false; };
+  }, [coach, isAdmin, path]);
 
   useEffect(() => {
     if (!loading && !session && !isLogin) router.replace('/login');
@@ -59,6 +71,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <Link key={t.href} href={t.href} className={path.startsWith(t.href) ? 'tab on' : 'tab'}
                 aria-current={path.startsWith(t.href) ? 'page' : undefined}>
             {t.label}
+            {t.href === '/enquiries' && newEnquiries > 0 && <span className="tab-badge" aria-label={`${newEnquiries} waiting`}>{newEnquiries}</span>}
           </Link>
         ))}
       </nav>

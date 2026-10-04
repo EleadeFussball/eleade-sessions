@@ -3,12 +3,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { fmtDate, todayISO } from '@/lib/dates';
 import { FORMAT_LABEL } from '@/lib/types';
-import { entryKey, hhmm, minutesOf, timeOf, type ScheduleEntry } from '@/lib/schedule';
+import { canComplete, entryKey, hhmm, minutesOf, timeOf, type ScheduleEntry } from '@/lib/schedule';
 
 const SNAP = 15;            // sessions start on a quarter hour
 const HOLD_MS = 350;        // hold this long on a touch screen to pick a session up
 const SLOP = 10;            // moving further than this during the hold means the person is scrolling
-const HOUR = 52;            // pixels per hour
+const HOUR = 60;            // pixels per hour
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 type Props = {
@@ -18,6 +18,7 @@ type Props = {
   onPickSlot: (day: string, time: string) => void;
   onPickEntry: (o: ScheduleEntry) => void;
   onMove: (o: ScheduleEntry, day: string, time: string) => void;
+  onComplete?: (o: ScheduleEntry) => void;
 };
 
 /** Side-by-side columns for sessions that overlap in time. */
@@ -47,7 +48,7 @@ function layout(list: ScheduleEntry[]) {
   return out;
 }
 
-export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry, onMove }: Props) {
+export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry, onMove, onComplete }: Props) {
   const { coach, coaches, isAdmin } = useAuth();
   const bodyRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ key: string; day: string; mins: number } | null>(null);
@@ -55,6 +56,11 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
   const [armed, setArmed] = useState<string | null>(null);   // held long enough, ready to move
   const armedRef = useRef(false);
   const tapBlock = useRef(false);
+  const [, setTick] = useState(0);   // re-check every half minute which sessions can be completed
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   // While a session is held on a touch screen, stop the page from scrolling under the finger.
   useEffect(() => {
@@ -86,6 +92,13 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
     const box = el.getBoundingClientRect();
     const mins = from + ((e.clientY - box.top) / HOUR) * 60;
     return Math.max(from, Math.min(to - SNAP, Math.round(mins / SNAP) * SNAP));
+  }
+
+  /** A tap on the grid starts at the full hour that was tapped: 7:00, 8:00, 9:00. */
+  function hourAt(e: { clientY: number }, el: HTMLElement) {
+    const box = el.getBoundingClientRect();
+    const mins = from + ((e.clientY - box.top) / HOUR) * 60;
+    return Math.max(from, Math.min(to - 60, Math.floor(mins / 60) * 60));
   }
 
   function dayAt(clientX: number) {
@@ -136,7 +149,7 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
                  style={{ backgroundSize: `100% ${HOUR}px` }}
                  onClick={(e) => {
                    if ((e.target as HTMLElement).closest('.ev')) return;
-                   onPickSlot(day, timeOf(timeAt(e, e.currentTarget)));
+                   onPickSlot(day, timeOf(hourAt(e, e.currentTarget)));
                  }}>
               {day === today && nowMins > from && nowMins < to && (
                 <div className="grid-now" style={{ top: ((nowMins - from) / 60) * HOUR }} />
@@ -147,6 +160,7 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
                 const startM = dragging ? drag.mins : minutesOf(o.start_time)!;
                 const mine = isAdmin || o.coach_id === coach?.id;
                 const done = !!o.session_id;
+                const completable = !done && !dragging && canComplete(o, isAdmin) && (isAdmin || o.coach_id === coach?.id);
                 return (
                   <button
                     key={key} type="button" data-ev={key}
@@ -216,10 +230,19 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
                   >
                     <span className="ev-time">{dragging ? timeOf(drag!.mins) : hhmm(o.start_time)}</span>
                     <span className="ev-name">{o.players}</span>
-                    <span className="ev-sub">
-                      {FORMAT_LABEL[o.format]}
-                      {(!mine || isAdmin) && ` · ${coaches.find((c) => c.id === o.coach_id)?.name ?? ''}`}
-                    </span>
+                    {completable && onComplete ? (
+                      <span role="button" tabIndex={0} className={o.minutes < 60 ? 'ev-done corner' : 'ev-done'}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => { e.stopPropagation(); onComplete(o); }}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onComplete(o); } }}>
+                        Completed
+                      </span>
+                    ) : (
+                      <span className="ev-sub">
+                        {FORMAT_LABEL[o.format]}
+                        {(!mine || isAdmin) && ` · ${coaches.find((c) => c.id === o.coach_id)?.name ?? ''}`}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -227,7 +250,7 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
           );
         })}
       </div>
-      <p className="hint mt">Tap an empty slot to add a session, or a session to open it. Hold a session for a moment, then drag it to another time or day. With a mouse, drag it straight away.</p>
+      <p className="hint mt">Tap an empty slot to add a session, or a session to open it. Tap Completed on a session once it is over. Hold a session for a moment, then drag it to another time or day. With a mouse, drag it straight away.</p>
     </div>
   );
 }

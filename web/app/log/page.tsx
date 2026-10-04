@@ -1,11 +1,13 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { usePlayers } from '@/lib/usePlayers';
 import { PlayerPicker } from '@/components/PlayerPicker';
 import { PlannedSessions } from '@/components/PlannedSessions';
+import { StripeNote, useUnusedPayments } from '@/components/StripeNote';
+import { useLastLocation } from '@/lib/useLastLocation';
 import { normaliseTime } from '@/lib/time';
 import { todayISO, addDays, fmtDate, num } from '@/lib/dates';
 import { FORMAT_LABEL, OUTCOME_LABEL, OUTCOME_HINT, MAX_PLAYERS, PAYMENT_LABEL, type Format, type Outcome, type PaymentMethod, type PlayerBalance } from '@/lib/types';
@@ -42,6 +44,19 @@ export default function LogPage() {
   const [saved, setSaved] = useState<Saved | null>(null);
 
   useEffect(() => { if (coach && !coachId) setCoachId(coach.id); }, [coach, coachId]);
+  const loc = useLastLocation(ids[0], setLocation);
+
+  // A Stripe payment from this player is waiting: suggest "Paid by Stripe" once per player choice.
+  const unused = useUnusedPayments(ids);
+  const suggested = useRef('');
+  useEffect(() => {
+    const key = ids.join(',');
+    if (!key || suggested.current === key || unused.length === 0) return;
+    if (format !== 'assessment' && format !== 'testing' && outcome !== 'cancelled_in_time' && payMethod === '') {
+      suggested.current = key;
+      setPayMethod('stripe');
+    }
+  }, [ids, unused, format, outcome, payMethod]);
   useEffect(() => {
     supabase.from('sessions').select('location').not('location', 'is', null)
       .order('session_date', { ascending: false }).limit(400)
@@ -92,7 +107,7 @@ export default function LogPage() {
       p_topic: showNotes ? topic.trim() || null : null,
       p_observations: obs.trim() || null,
       p_improve: showNotes ? improve.trim() || null : null,
-      p_payment_method: payMethod && (isAssessment || payMethod === 'cash') && outcome !== 'cancelled_in_time' ? payMethod : null,
+      p_payment_method: payMethod && (isAssessment || payMethod === 'cash' || payMethod === 'stripe') && outcome !== 'cancelled_in_time' ? payMethod : null,
     });
     setBusy(false);
     if (error) { setErr(errorText(error)); return; }
@@ -101,6 +116,7 @@ export default function LogPage() {
     setSaved({ names, date, outcome, format, after: (data as PlayerBalance[]) ?? [] });
     reload();
     setIds([]); setTopic(''); setObs(''); setImprove(''); setOutcome('attended'); setTime(''); setPayMethod('');
+    suggested.current = ''; loc.reset();
     window.scrollTo({ top: 0 });
   }
 
@@ -183,12 +199,13 @@ export default function LogPage() {
               <button type="button" aria-pressed={payMethod === 'cash'} onClick={() => setPayMethod(payMethod === 'cash' ? '' : 'cash')}>
                 Paid cash
               </button>
+              <button type="button" aria-pressed={payMethod === 'stripe'} onClick={() => setPayMethod(payMethod === 'stripe' ? '' : 'stripe')}>
+                Paid by Stripe
+              </button>
             </div>
-            <p className="hint mt">
-              {payMethod === 'cash'
-                ? 'Paid in cash today: no package credit is used and it isn’t added to a weekly transfer. Jan confirms the cash.'
-                : 'Tap if the parents paid you in cash for this session.'}
-            </p>
+            {payMethod === 'stripe' && <StripeNote playerIds={ids} />}
+            {payMethod === 'cash' && <p className="hint mt">Paid in cash: no package credit is used and it isn’t added to a weekly transfer. Jan confirms the cash.</p>}
+            {payMethod === '' && <p className="hint mt">Leave both off if the session uses package credit. Tap Paid cash or Paid by Stripe if the parents paid for this session on its own.</p>}
           </div>
         )}
 
@@ -196,13 +213,13 @@ export default function LogPage() {
           <div className="field" style={{ position: 'relative' }}>
             <label htmlFor="loc" className="fieldlabel">Location</label>
             <input id="loc" type="text" autoComplete="off" value={location} placeholder="e.g. Moore Park"
-                   onChange={(e) => { setLocation(e.target.value); setLocOpen(true); }}
+                   onChange={(e) => { loc.edit(e.target.value); setLocOpen(true); }}
                    onFocus={() => setLocOpen(true)} onBlur={() => setTimeout(() => setLocOpen(false), 150)} />
             {locOpen && locMatches.length > 0 && (
               <ul className="results" role="listbox" aria-label="Locations">
                 {locMatches.map((l) => (
                   <li key={l}><button type="button" onMouseDown={(e) => e.preventDefault()}
-                                      onClick={() => { setLocation(l); setLocOpen(false); }}>{l}</button></li>
+                                      onClick={() => { loc.edit(l); setLocOpen(false); }}>{l}</button></li>
                 ))}
               </ul>
             )}

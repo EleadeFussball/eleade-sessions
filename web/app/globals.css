@@ -286,3 +286,33 @@ details.panel[open] > summary { border-bottom: 1px solid var(--line); margin-bot
 .ev.dragging .ev-time { color: var(--brand-red); }
 .grid-col { touch-action: pan-y; }
 .newplayer { margin-top: 8px; padding: 10px 12px; background: var(--amber-soft); border-radius: var(--radius); }
+
+/* ---- sheet: forms that open over the calendar ---- */
+.sheet-back { position: fixed; inset: 0; background: rgba(10, 10, 10, .5); z-index: 60; display: flex; align-items: flex-end; justify-content: center; }
+.sheet {
+  position: relative; background: var(--paper); width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto;
+  border-radius: 16px 16px 0 0; padding: 18px 16px calc(24px + env(safe-area-inset-bottom));
+  box-shadow: 0 -6px 30px rgba(0, 0, 0, .25); animation: sheet-up .18s ease-out;
+}
+@keyframes sheet-up { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+@media (min-width: 700px) { .sheet-back { align-items: center; } .sheet { border-radius: 16px; max-height: 88vh; padding: 22px; } }
+.sheet-x { position: absolute; top: 6px; right: 8px; border: 0; background: transparent; font-size: 1.7rem; line-height: 1; cursor: pointer; color: var(--muted); padding: 6px 12px; }
+.sheet-form h2 { margin-top: 0; padding-right: 36px; }
+.sheet .list { margin: 0; padding-right: 30px; }
+
+/* Completed pill on a calendar session */
+.ev-done { display: inline-block; align-self: flex-start; margin-top: 2px; padding: 1px 8px; border-radius: 999px; background: var(--brand-red); color: #fff; font-size: .68rem; font-weight: 700; cursor: pointer; }
+.ev-done:hover, .ev-done:focus-visible { filter: brightness(1.15); }
+
+.tab-badge { display: inline-block; margin-left: 4px; min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--brand-red); color: #fff; font-size: .7rem; font-weight: 700; line-height: 18px; text-align: center; }
+
+/* ---- enquiries ---- */
+.enquiry { padding: 0; margin-bottom: 10px; }
+.enq-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; text-align: left; background: none; border: 0; padding: 12px 14px; cursor: pointer; font: inherit; color: inherit; }
+.enq-body { padding: 0 14px 14px; }
+.step { border-top: 1px solid var(--line); padding: 12px 0 4px; }
+.step h4 { margin: 0 0 6px; font-size: .92rem; }
+.check { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0; cursor: pointer; }
+.check input { margin-top: 3px; width: 18px; height: 18px; flex: 0 0 auto; }
+.ev-time, .ev-name { flex-shrink: 0; }
+.ev-done.corner { position: absolute; top: 2px; right: 3px; margin: 0; padding: 0 6px; }

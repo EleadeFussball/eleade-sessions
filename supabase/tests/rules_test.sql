@@ -42,6 +42,10 @@ insert into public.sessions (id, session_date, coach_id, format, outcome, import
   ('00000000-0000-0000-0000-00000000f001', date '2026-03-01', '00000000-0000-0000-0000-0000000000c2', '1:1', 'attended', true);
 insert into public.session_players values ('00000000-0000-0000-0000-00000000f001', '00000000-0000-0000-0000-0000000000b1');
 
+-- The tests run at midday Sydney time, whatever the real time is.
+create or replace function public.sydney_now() returns timestamp language sql stable as
+$$ select public.today_sydney()::timestamp + interval '12 hours' $$;
+
 create temp table results (test text, ok boolean, detail text);
 grant all on results to authenticated;
 
@@ -229,12 +233,13 @@ update public.sessions set payment_method = null where topic = 'Stripe paid';
 -- ---------- regular sessions (as Tyler, then Paul) ----------
 insert into public.players (id, name) values ('00000000-0000-0000-0000-0000000000ba', 'Plan Kid');
 select public.create_plan('00000000-0000-0000-0000-0000000000c2', '1:1', extract(isodow from public.today_sydney())::int,
-  '06:30', array['00000000-0000-0000-0000-0000000000ba']::uuid[], 'Moore Park', public.today_sydney() - 7);
+  '00:00', array['00000000-0000-0000-0000-0000000000ba']::uuid[], 'Moore Park', public.today_sydney() - 7);
+select public.set_plan_minutes((select id from public.session_plans limit 1), 15);
 select pg_temp.check('a weekly plan produces one session per week',
   (select count(*) from public.plan_occurrences(public.today_sydney() - 7, public.today_sydney())) = 2);
 select public.confirm_plan_session((select id from public.session_plans limit 1), public.today_sydney(), 'attended', 'Passing', 'Good', null);
 select pg_temp.check('confirming a planned session logs it with the plan details',
-  (select s.location = 'Moore Park' and s.start_time = '06:30' and s.coach_id = '00000000-0000-0000-0000-0000000000c2'
+  (select s.location = 'Moore Park' and s.start_time = '00:00' and s.coach_id = '00000000-0000-0000-0000-0000000000c2'
      from public.sessions s where s.plan_date = public.today_sydney()));
 select pg_temp.check('a confirmed planned session shows as handled',
   (select session_id is not null from public.plan_occurrences(public.today_sydney(), public.today_sydney())));
@@ -566,6 +571,7 @@ select pg_temp.check('every coach sees the schedule',
   (select count(*) from public.calendar(public.today_sydney(), public.today_sydney()) where kind = 'once') = 1);
 
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.reschedule('once', :'bk', null, public.today_sydney(), time '00:00', 15);
 select public.confirm_booking(:'bk', 'attended', 'Finishing', 'Sharp today', 'Weak foot') as sid \gset
 select pg_temp.check('confirming a one-off session logs it and uses a credit',
   (select sessions_left from public.player_balances where name = 'Alpha Pack') = :bal_alpha - 1
@@ -613,6 +619,7 @@ do $$ begin
   exception when others then perform pg_temp.check('a session cannot run for eight hours plus', true);
   end;
 end $$;
+select public.reschedule('once', :'bk3', null, public.today_sydney(), time '00:00', 60);
 select public.confirm_booking(:'bk3', 'attended') as sid3 \gset
 select pg_temp.check('the logged session keeps the planned length',
   (select minutes from public.sessions where id = :'sid3') = 60);
@@ -621,6 +628,161 @@ select pg_temp.check('a session logged on its own shows on the calendar',
            where kind = 'logged' and ref_id = '00000000-0000-0000-0000-00000000e001'));
 select pg_temp.check('a confirmed plan is not listed twice',
   (select count(*) from public.calendar(public.today_sydney(), public.today_sydney()) where ref_id = :'bk3') = 1);
+
+
+-- ---------- completing a session: five minutes after it ends ----------
+reset role;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.book_session('00000000-0000-0000-0000-0000000000c2', public.today_sydney(), time '23:30', 15, '1:1',
+  array['00000000-0000-0000-0000-0000000000b1']::uuid[], null, null) as bkl \gset
+do $$ begin
+  begin
+    perform public.confirm_booking((select id from public.bookings where start_time = time '23:30' and session_id is null limit 1), 'attended');
+    perform pg_temp.check('a coach cannot complete a session before it has ended', false);
+  exception when others then perform pg_temp.check('a coach cannot complete a session before it has ended', sqlerrm like '%five minutes after it ends%');
+  end;
+end $$;
+select public.confirm_booking(:'bkl', 'cancelled_late');
+select pg_temp.check('a late cancellation can be recorded before the session time',
+  (select outcome from public.sessions where id = (select session_id from public.bookings where id = :'bkl')) = 'cancelled_late');
+select public.book_session('00000000-0000-0000-0000-0000000000c2', public.today_sydney(), time '23:30', 15, '1:1',
+  array['00000000-0000-0000-0000-0000000000b1']::uuid[], null, null) as bkl2 \gset
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select public.confirm_booking(:'bkl2', 'attended');
+select pg_temp.check('Jan can complete a session at any time',
+  (select outcome from public.sessions where id = (select session_id from public.bookings where id = :'bkl2')) = 'attended');
+
+-- ---------- Stripe payments for single sessions ----------
+reset role;
+insert into public.players (id, name) values
+  ('00000000-0000-0000-0000-0000000000c9', 'Noah Test'),
+  ('00000000-0000-0000-0000-0000000000ca', 'Prepaid Pat'),
+  ('00000000-0000-0000-0000-0000000000cb', 'Later Larry');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.log_session(public.today_sydney() - 1, '00000000-0000-0000-0000-0000000000c2', '1:1', 'attended',
+  array['00000000-0000-0000-0000-0000000000c9']::uuid[]) as noah_s \gset
+select pg_temp.check('a session logged without payment uses a credit (balance goes below zero)',
+  (select sessions_left from public.player_balances where name = 'Noah Test') = -1);
+reset role;
+select public.record_stripe_payment('cs_sess_1', null, 132, 'aud', 'noah@test', 'Noah Parent', now());
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select public.assign_stripe_payment((select id from public.stripe_payments where stripe_session_id = 'cs_sess_1'), '00000000-0000-0000-0000-0000000000c9');
+select pg_temp.check('a 132 dollar payment assigned by Jan is a session payment, not an assessment',
+  (select for_what = 'session' and player_id is not null and applied_session_id is null from public.stripe_payments where stripe_session_id = 'cs_sess_1'));
+select pg_temp.check('the payment lists the player''s session as a candidate',
+  exists (select 1 from public.stripe_link_candidates((select id from public.stripe_payments where stripe_session_id = 'cs_sess_1')) where session_id = :'noah_s'));
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.link_stripe_payment((select id from public.stripe_payments where stripe_session_id = 'cs_sess_1'), :'noah_s');
+select pg_temp.check('linking marks the session paid by Stripe and confirmed',
+  (select payment_method = 'stripe' and payment_status = 'confirmed' from public.sessions where id = :'noah_s')
+  and (select applied_session_id = :'noah_s' from public.stripe_payments where stripe_session_id = 'cs_sess_1'));
+select pg_temp.check('a session paid by Stripe no longer uses a credit',
+  (select sessions_left from public.player_balances where name = 'Noah Test') = 0);
+do $$ begin
+  begin
+    perform public.link_stripe_payment((select id from public.stripe_payments where stripe_session_id = 'cs_sess_1'), (select id from public.sessions where topic = 'First touch' limit 1));
+    perform pg_temp.check('a payment cannot be used twice', false);
+  exception when others then perform pg_temp.check('a payment cannot be used twice', sqlerrm like '%already used%');
+  end;
+  begin
+    perform public.assign_stripe_payment_for((select id from public.stripe_payments where stripe_session_id = 'cs_sess_1'), '00000000-0000-0000-0000-0000000000c9', 'session');
+    perform pg_temp.check('coaches cannot assign payments', false);
+  exception when others then perform pg_temp.check('coaches cannot assign payments', sqlerrm like '%Only Jan%');
+  end;
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select public.unlink_stripe_payment((select id from public.stripe_payments where stripe_session_id = 'cs_sess_1'));
+select pg_temp.check('Jan can undo a link',
+  (select applied_session_id is null from public.stripe_payments where stripe_session_id = 'cs_sess_1')
+  and (select payment_status = 'awaiting' from public.sessions where id = :'noah_s'));
+select public.link_stripe_payment((select id from public.stripe_payments where stripe_session_id = 'cs_sess_1'), :'noah_s');
+
+-- paid in advance with a tagged session link, then the coach logs "paid by Stripe"
+reset role;
+select public.record_stripe_payment('cs_sess_2', 'session_00000000-0000-0000-0000-0000000000ca', 132, 'aud', null, null, now());
+select pg_temp.check('a tagged session link is matched to the player at once',
+  (select player_id = '00000000-0000-0000-0000-0000000000ca' and for_what = 'session' from public.stripe_payments where stripe_session_id = 'cs_sess_2'));
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.log_session(public.today_sydney(), '00000000-0000-0000-0000-0000000000c2', '1:1', 'attended',
+  array['00000000-0000-0000-0000-0000000000ca']::uuid[], null, null, null, null, null, 'stripe') as pat_s \gset
+select pg_temp.check('paid by Stripe in advance: the session is confirmed when logged',
+  (select payment_status = 'confirmed' from public.sessions where id = :'pat_s')
+  and (select applied_session_id = :'pat_s' from public.stripe_payments where stripe_session_id = 'cs_sess_2'));
+
+-- the coach logs "paid by Stripe" first, the payment arrives later
+select public.log_session(public.today_sydney(), '00000000-0000-0000-0000-0000000000c2', '1:1', 'attended',
+  array['00000000-0000-0000-0000-0000000000cb']::uuid[], null, null, null, null, null, 'stripe') as larry_s \gset
+select pg_temp.check('paid by Stripe but not received yet: waits for the check',
+  (select payment_status from public.sessions where id = :'larry_s') = 'awaiting');
+reset role;
+select public.record_stripe_payment('cs_sess_3', 'session_00000000-0000-0000-0000-0000000000cb', 132, 'aud', null, null, now());
+select pg_temp.check('the payment arriving later confirms the waiting session',
+  (select payment_status = 'confirmed' from public.sessions where id = :'larry_s'));
+select pg_temp.check('an assessment payment never pays an ordinary session',
+  (select count(*) from public.stripe_payments where for_what = 'assessment' and applied_session_id in (:'noah_s', :'pat_s', :'larry_s')) = 0);
+
+-- ---------- enquiries ----------
+select public.record_enquiry('wix-1', '{"first_name":"Zed","last_name":"Enquiry","email":"zed.parent@test","phone":"0400 000 000","age_group":"U12"}'::jsonb, '{}'::jsonb) as enq \gset
+select pg_temp.check('an enquiry is recorded', :'enq' is not null);
+select pg_temp.check('a repeated submission is ignored',
+  public.record_enquiry('wix-1', '{"first_name":"Zed"}'::jsonb, '{}'::jsonb) is null
+  and (select count(*) from public.enquiries) = 1);
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select pg_temp.check('a coach does not see enquiries that are not theirs', (select count(*) from public.enquiries) = 0);
+do $$ begin
+  begin
+    perform public.assign_enquiry((select id from public.enquiries limit 1), '00000000-0000-0000-0000-0000000000c2');
+    perform pg_temp.check('a coach cannot assign enquiries', false);
+  exception when others then perform pg_temp.check('a coach cannot assign enquiries', true);
+  end;
+  begin
+    perform public.rotate_enquiry_key();
+    perform pg_temp.check('a coach cannot create the website key', false);
+  exception when others then perform pg_temp.check('a coach cannot create the website key', true);
+  end;
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select pg_temp.check('Jan sees the new enquiry', (select count(*) from public.enquiries where status = 'new') = 1);
+select public.assign_enquiry(:'enq', '00000000-0000-0000-0000-0000000000c2') as enq_player \gset
+select pg_temp.check('assigning creates the player and moves the enquiry on',
+  (select status = 'assigned' and player_id = :'enq_player' and coach_id = '00000000-0000-0000-0000-0000000000c2' from public.enquiries where id = :'enq')
+  and (select name = 'Zed Enquiry' and main_coach_id = '00000000-0000-0000-0000-0000000000c2' from public.players where id = :'enq_player'));
+select public.rotate_enquiry_key() as newkey \gset
+select pg_temp.check('the website key can be created and read by Jan',
+  length(:'newkey') = 64 and public.get_enquiry_key() = :'newkey');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select pg_temp.check('the assigned coach sees the enquiry', (select count(*) from public.enquiries) = 1);
+select public.enquiry_book(:'enq', public.today_sydney() + 2, time '16:00', 60, 'Moore Park') as enq_bk \gset
+select pg_temp.check('the assessment lands in the coach''s calendar',
+  exists (select 1 from public.calendar(public.today_sydney() + 2, public.today_sydney() + 2)
+           where ref_id = :'enq_bk' and format = 'assessment' and coach_id = '00000000-0000-0000-0000-0000000000c2' and start_time = time '16:00'));
+select pg_temp.check('the enquiry shows as booked', (select status from public.enquiries where id = :'enq') = 'booked');
+select public.enquiry_book(:'enq', public.today_sydney() + 3, time '17:00', 60, null);
+select pg_temp.check('booking again moves the same assessment',
+  (select count(*) from public.bookings where id = :'enq_bk' and session_date = public.today_sydney() + 3 and cancelled_at is null) = 1);
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a3';
+do $$ begin
+  begin
+    perform public.enquiry_book((select id from public.enquiries limit 1), public.today_sydney() + 4, time '10:00', 60, null);
+    perform pg_temp.check('another coach cannot book it', false);
+  exception when others then perform pg_temp.check('another coach cannot book it', true);
+  end;
+end $$;
+select pg_temp.check('another coach does not see the enquiry', (select count(*) from public.enquiries) = 0);
+
+
+-- ---------- last location ----------
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select pg_temp.check('the last place a player was coached is found',
+  public.last_location('00000000-0000-0000-0000-0000000000b1') = 'Moore Park');
+select pg_temp.check('a player never coached anywhere has no last place',
+  public.last_location('00000000-0000-0000-0000-0000000000cb') is null);
 
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
