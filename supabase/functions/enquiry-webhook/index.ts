@@ -17,10 +17,16 @@ async function sha(text: string): Promise<string> {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 24);
 }
 
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'content-type, authorization, x-eleade-key',
+};
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...cors } });
 
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
 
   const url = new URL(req.url);
@@ -50,12 +56,11 @@ Deno.serve(async (req) => {
   }
 
   const { fields, externalId, answers } = normalise(payload);
-  if (!fields.first_name && !fields.email && !fields.parent_name) {
-    return json({ error: 'No name or email found in the submission' }, 422);
-  }
+  // Never drop a submission: if no name is recognised it is still saved with everything the form sent,
+  // so it can be read in the app and the field matching adjusted.
   // Without an id from the website, treat the same person submitting twice on one day as one enquiry.
   const today = new Date().toISOString().slice(0, 10);
-  const id = externalId || `auto-${await sha([fields.email, fields.first_name, fields.last_name, today].join('|').toLowerCase())}`;
+  const id = externalId || `auto-${await sha([fields.email, fields.first_name, fields.last_name, fields.email || fields.first_name ? '' : JSON.stringify(payload), today].join('|').toLowerCase())}`;
 
   const { data, error } = await db.rpc('record_enquiry', { p_external_id: id, p_fields: fields, p_raw: { answers, payload } });
   if (error) return json({ error: 'Could not save the enquiry' }, 500);
