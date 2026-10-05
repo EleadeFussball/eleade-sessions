@@ -842,6 +842,19 @@ select pg_temp.check('a salaried coach''s cash still waits for Jan to confirm',
 select pg_temp.check('a salaried coach has nothing deducted',
   (select cash_kept = 0 from public.coach_pay where session_id = :'janis'));
 
+-- ---------- a coach who is paid separately invoices without ABN or bank details ----------
+reset role;
+update public.coaches set paid_separately = true where id = '00000000-0000-0000-0000-0000000000c3';
+update public.coach_rates set one_to_one = 55 where coach_id = '00000000-0000-0000-0000-0000000000c3';
+insert into public.sessions (id, session_date, coach_id, format, outcome) values
+  ('00000000-0000-0000-0000-0000000d0099', pg_temp.last_sun() - 1, '00000000-0000-0000-0000-0000000000c3', '1:1', 'attended');
+insert into public.session_players values ('00000000-0000-0000-0000-0000000d0099', '00000000-0000-0000-0000-0000000000b1');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a3';
+select public.submit_invoice('00000000-0000-0000-0000-0000000000c3', pg_temp.last_sun()) as paulinv \gset
+select pg_temp.check('Paul can invoice without ABN or bank details',
+  (select total > 0 and bsb = '' and coach_abn = '' and coach_legal_name = 'Paul' from public.coach_invoices where id = :'paulinv'));
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;

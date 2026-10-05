@@ -11,6 +11,7 @@ export type Coach = {
   is_admin: boolean;
   active: boolean;
   salaried: boolean;
+  paid_separately: boolean;
 };
 
 export type PlayerBalance = {

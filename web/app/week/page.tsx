@@ -198,7 +198,7 @@ export default function WeekPage() {
                     <h3 style={{ marginTop: 0 }}>Check before you send</h3>
                     <p>Invoice for week {isoWeek(start)}: <strong>{money(draftTotal)}</strong> ({draft.length} {draft.length === 1 ? 'line' : 'lines'}, no GST).</p>
                     <p className="hint">Once it is sent, Jan pays it as it is. Anything you forgot to log goes on your next invoice as a separate line.</p>
-                    {(!details?.abn || !details.bsb || !details.account_number) && (
+                    {!selected?.paid_separately && (!details?.abn || !details.bsb || !details.account_number) && (
                       <div className="notice warn">Your ABN and bank details are missing. Add them on the <Link href="/account">Account</Link> page first, then come back.</div>
                     )}
                     <label className="check">

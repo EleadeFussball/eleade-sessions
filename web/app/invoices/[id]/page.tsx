@@ -39,7 +39,7 @@ export default function InvoicePage() {
   return (
     <>
       <div className="row no-print" style={{ marginBottom: 16 }}>
-        <Link href={isAdmin ? '/monday' : '/week'} className="btn small ghost">Back</Link>
+        <Link href={isAdmin ? '/admin' : '/week'} className="btn small ghost">Back</Link>
         <button type="button" className="btn small" onClick={() => window.print()}>Download PDF</button>
       </div>
       <p className="hint no-print">Download PDF opens the print window. Choose &quot;Save as PDF&quot; to keep a copy for your tax records.</p>
@@ -63,7 +63,7 @@ export default function InvoicePage() {
           <div>
             <div className="inv-label">From</div>
             <strong>{inv.coach_legal_name}</strong>
-            <div>ABN {fmtAbn(inv.coach_abn)}</div>
+            {inv.coach_abn && <div>ABN {fmtAbn(inv.coach_abn)}</div>}
           </div>
           <div>
             <div className="inv-label">To</div>
@@ -81,12 +81,19 @@ export default function InvoicePage() {
         </table>
         <p className="hint">No GST has been charged. The supplier is not registered for GST.</p>
 
-        <div className="inv-pay">
-          <div className="inv-label">Payment by bank transfer to</div>
-          <div>{inv.account_name}</div>
-          <div>BSB {fmtBsb(inv.bsb)}, account {inv.account_number}</div>
-          <div>Reference {invoiceNo(inv)}</div>
-        </div>
+        {inv.bsb ? (
+          <div className="inv-pay">
+            <div className="inv-label">Payment by bank transfer to</div>
+            <div>{inv.account_name}</div>
+            <div>BSB {fmtBsb(inv.bsb)}, account {inv.account_number}</div>
+            <div>Reference {invoiceNo(inv)}</div>
+          </div>
+        ) : (
+          <div className="inv-pay">
+            <div className="inv-label">Payment</div>
+            <div>Paid separately by Eleade. Reference {invoiceNo(inv)}</div>
+          </div>
+        )}
       </article>
     </>
   );

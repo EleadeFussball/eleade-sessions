@@ -18,7 +18,7 @@ type ToConfirm = { kind: 'session' | 'package'; item_id: string; player_id: stri
   what: string; amount: number | null; payment_method: string | null; recorded_by: string | null };
 const METHOD: Record<string, string> = { stripe: 'Stripe link', bank: 'bank transfer', cash: 'cash', other: 'other' };
 
-export default function MondayPage() {
+export default function AdminPage() {
   const { isAdmin, coaches } = useAuth();
   const [lastWeek] = useState(addDays(weekStart(todayISO()), -7));
   const [low, setLow] = useState<PlayerBalance[]>([]);
@@ -90,7 +90,7 @@ export default function MondayPage() {
     try {
       const text = buildAba(
         { bsb: bank.bsb!, account_number: bank.account_number!, account_name: bank.account_name!, user_id_number: bank.user_id_number, remitter_name: bank.remitter_name },
-        toPay.map((i) => ({ bsb: i.bsb, account_number: i.account_number, account_name: i.account_name, amount: Number(i.total), reference: `ELEADE ${invoiceNo(i)}` })),
+        toPay.filter((i) => i.bsb).map((i) => ({ bsb: i.bsb, account_number: i.account_number, account_name: i.account_name, amount: Number(i.total), reference: `ELEADE ${invoiceNo(i)}` })),
         new Date(),
       );
       const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
@@ -108,7 +108,7 @@ export default function MondayPage() {
 
   return (
     <>
-      <h1>Monday check</h1>
+      <h1>Admin</h1>
       <p className="muted">Last week: {fmtWeek(lastWeek)}</p>
       {err && <div className="notice err">{err}</div>}
       {unconfirmed > 0 && <div className="notice warn">{unconfirmed} package players still have an unconfirmed starting balance. Confirm them on each player page.</div>}
@@ -120,7 +120,7 @@ export default function MondayPage() {
             <thead><tr><th>Coach</th><th>Invoice</th><th className="n">Amount</th><th></th></tr></thead>
             <tbody>{toPay.map((i) => (
               <tr key={i.id}>
-                <td>{i.coach_name}</td>
+                <td>{i.coach_name}{!i.bsb && <><br /><span className="hint">Paid separately</span></>}</td>
                 <td><Link href={`/invoices/${i.id}`}>{invoiceNo(i)}</Link><br /><span className="hint">Week {isoWeek(i.period_start)}, to {fmtDate(i.period_end)}</span></td>
                 <td className="n">{money(i.total)}</td>
                 <td className="n"><button className="btn small ghost" type="button" onClick={() => markInvoicesPaid([i.id])}>Mark paid</button></td>
@@ -136,6 +136,7 @@ export default function MondayPage() {
           ) : (
             <div className="notice warn">Add Eleade&apos;s paying account on the <Link href="/team">Team</Link> page to download a NAB payment file.</div>
           )}
+          {toPay.some((i) => !i.bsb) && <p className="hint mt">Invoices marked “Paid separately” have no bank details, so they are left out of the NAB file. Mark them paid once you have paid them.</p>}
           <p className="hint mt">In NAB Internet Banking on a computer, import the file as a multiple payment, check the total matches, and approve. Then tap Mark all paid.</p>
         </>
       )}

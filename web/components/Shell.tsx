@@ -11,7 +11,7 @@ const TABS = [
   { href: '/players', label: 'Players', admin: false },
   { href: '/enquiries', label: 'Enquiries', admin: false },
   { href: '/week', label: 'My week', admin: false },
-  { href: '/monday', label: 'Monday', admin: true },
+  { href: '/admin', label: 'Admin', admin: true },
   { href: '/stats', label: 'Stats', admin: true },
   { href: '/team', label: 'Team', admin: true },
 ];
@@ -22,6 +22,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const isLogin = path === '/login';
   const [newEnquiries, setNewEnquiries] = useState(0);
+  const [invoicesWaiting, setInvoicesWaiting] = useState(0);
 
   // Jan sees how many enquiries still need a coach; a coach sees how many are waiting for them.
   useEffect(() => {
@@ -30,6 +31,15 @@ export function Shell({ children }: { children: ReactNode }) {
     const q = supabase.from('enquiries').select('id', { count: 'exact', head: true });
     (isAdmin ? q.or('status.eq.new,and(status.eq.done,outcome.eq.handover)') : q.eq('status', 'assigned'))
       .then(({ count }) => { if (alive) setNewEnquiries(count ?? 0); });
+    return () => { alive = false; };
+  }, [coach, isAdmin, path]);
+
+  // Jan sees how many coach invoices have been sent and are waiting to be paid.
+  useEffect(() => {
+    if (!coach || !isAdmin) return;
+    let alive = true;
+    supabase.from('coach_invoices').select('id', { count: 'exact', head: true }).eq('status', 'submitted')
+      .then(({ count }) => { if (alive) setInvoicesWaiting(count ?? 0); });
     return () => { alive = false; };
   }, [coach, isAdmin, path]);
 
@@ -71,6 +81,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <Link key={t.href} href={t.href} className={path.startsWith(t.href) ? 'tab on' : 'tab'}
                 aria-current={path.startsWith(t.href) ? 'page' : undefined}>
             {t.label}
+            {t.href === '/admin' && invoicesWaiting > 0 && <span className="tab-badge" aria-label={`${invoicesWaiting} invoices waiting`}>{invoicesWaiting}</span>}
             {t.href === '/enquiries' && newEnquiries > 0 && <span className="tab-badge" aria-label={`${newEnquiries} waiting`}>{newEnquiries}</span>}
           </Link>
         ))}
