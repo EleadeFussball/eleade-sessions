@@ -78,7 +78,12 @@ export default function LogPage() {
   const max = MAX_PLAYERS[format];
   const chosen = ids.map((id) => players.find((p) => p.player_id === id)).filter(Boolean) as PlayerBalance[];
   const isAssessment = format === 'assessment';
-  const empty = isAssessment ? [] : chosen.filter((p) => p.billing_model === 'package' && Number(p.sessions_left ?? 0) <= 0);
+  const poolLeft = (p: PlayerBalance) => (format === '2:1' && p.pairs_left !== null && p.pairs_left !== undefined ? Number(p.pairs_left) : Number(p.sessions_left ?? 0));
+  const empty = isAssessment ? [] : chosen.filter((p) => p.billing_model === 'package' && poolLeft(p) <= 0);
+  const chosenFamilies = new Set(chosen.map((p) => p.family).filter(Boolean) as string[]);
+  const siblings = (format === '2:1' || format === '4:1') && ids.length < max
+    ? players.filter((p) => p.family && chosenFamilies.has(p.family) && !ids.includes(p.player_id) && p.active)
+    : [];
   const showNotes = outcome === 'attended';
 
   function pickFormat(f: Format) {
@@ -135,8 +140,12 @@ export default function LogPage() {
             </div>
           ) : saved.after.map((p) => (
             <div key={p.player_id}>
-              {p.name}: {p.billing_model === 'package' ? `${num(p.sessions_left)} ${Number(p.sessions_left) === 1 ? 'session' : 'sessions'} left` : 'pays weekly'}
-              {p.billing_model === 'package' && Number(p.sessions_left) <= 2 && ' (Jan will contact the parents about renewing)'}
+              {p.name}: {p.billing_model === 'package'
+                ? (saved.format === '2:1' && p.pairs_left !== null && p.pairs_left !== undefined
+                    ? `${num(p.pairs_left)} 2:1 ${Number(p.pairs_left) === 1 ? 'session' : 'sessions'} left`
+                    : `${num(p.sessions_left)} ${Number(p.sessions_left) === 1 ? 'session' : 'sessions'} left`)
+                : 'pays weekly'}
+              {p.billing_model === 'package' && (saved.format === '2:1' && p.pairs_left !== null && p.pairs_left !== undefined ? Number(p.pairs_left) : Number(p.sessions_left)) <= 2 && ' (Jan will contact the parents about renewing)'}
             </div>
           ))}
         </div>
@@ -164,9 +173,18 @@ export default function LogPage() {
         <div className="field">
           <span className="fieldlabel">{max === 1 ? 'Player' : `Players (up to ${max})`}</span>
           <PlayerPicker players={players} selected={ids} max={max} onChange={setIds} onCreate={addPlayer} />
+          {siblings.length > 0 && (
+            <div className="mt">
+              {siblings.map((p) => (
+                <button key={p.player_id} type="button" className="btn small ghost" style={{ marginRight: 8 }}
+                  onClick={() => setIds([...ids, p.player_id].slice(0, max))}>Add {p.name}</button>
+              ))}
+              <p className="hint">Brothers and sisters share one set of credits. A 2:1 session uses one 2:1 credit for the family.</p>
+            </div>
+          )}
           {empty.length > 0 && (
             <div className="notice warn">
-              {empty.map((p) => p.name).join(' and ')} {empty.length > 1 ? 'have' : 'has'} no credits left. You can still log the session. Jan will follow up with the parents.
+              {empty.map((p) => p.name).join(' and ')} {empty.length > 1 ? 'have' : 'has'} no {format === '2:1' && empty.some((p) => p.pairs_left !== null) ? '2:1 ' : ''}credits left. You can still log the session. Jan will follow up with the parents.
             </div>
           )}
         </div>

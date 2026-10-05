@@ -17,7 +17,7 @@ type Player = {
   session_price: number | null; main_coach_id: string | null; active: boolean; opening_confirmed: boolean; profile_notes: string | null;
   created_by: string | null;
 };
-type Ledger = { id: string; kind: string; sessions_delta: number; analyses_delta: number; package_name: string | null;
+type Ledger = { id: string; kind: string; sessions_delta: number; analyses_delta: number; pairs_delta: number; package_name: string | null;
   amount_paid: number | null; reason: string; effective_date: string; expires_on: string | null; player_id: string;
   payment_status: 'awaiting' | 'confirmed'; payment_method: PaymentMethod | null; confirmed_at: string | null };
 type Note = { id: string; body: string; author: string | null; created_at: string };
@@ -130,6 +130,9 @@ export default function PlayerPage() {
         <>
           <div className="scoreboard">
             <div><div className={`big ${cls}`}>{num(bal.sessions_left)}</div><div className="cap">sessions left</div></div>
+            {bal.pairs_left !== null && bal.pairs_left !== undefined && (
+              <div><div className="big">{num(bal.pairs_left)}</div><div className="cap">2:1 sessions left</div></div>
+            )}
             <div><div className="big">{num(bal.analyses_left)}</div><div className="cap">game analyses left</div></div>
           </div>
           {!p.opening_confirmed && <div className="notice warn">Starting balance taken from the old spreadsheet and not yet confirmed by Jan.</div>}
@@ -188,7 +191,7 @@ export default function PlayerPage() {
       <h2>Credit history</h2>
       {ledger.length === 0 ? <p className="empty">No credits recorded{p.family ? ' on this player. Family credits may sit with a sibling.' : '.'}</p> : (
         <table className="t">
-          <thead><tr><th>Date</th><th>What</th><th className="n">Sessions</th><th className="n">Analyses</th></tr></thead>
+          <thead><tr><th>Date</th><th>What</th><th className="n">1:1 sessions</th><th className="n">2:1 sessions</th><th className="n">Analyses</th></tr></thead>
           <tbody>
             {ledger.map((l) => (
               <tr key={l.id}>
@@ -208,6 +211,7 @@ export default function PlayerPage() {
                   )}
                 </td>
                 <td className="n">{Number(l.sessions_delta) > 0 ? '+' : ''}{num(l.sessions_delta)}</td>
+                <td className="n">{Number(l.pairs_delta) > 0 ? '+' : ''}{num(l.pairs_delta)}</td>
                 <td className="n">{Number(l.analyses_delta) > 0 ? '+' : ''}{num(l.analyses_delta)}</td>
               </tr>
             ))}
@@ -236,6 +240,7 @@ function AdminPanel({ p, onSaved }: { p: Player; onSaved: () => void }) {
   const [pkg, setPkg] = useState('');
   const [s, setS] = useState('');
   const [a, setA] = useState('0');
+  const [pr, setPr] = useState('0');
   const [paid, setPaid] = useState('');
   const [reason, setReason] = useState('');
   const [date, setDate] = useState(todayISO());
@@ -263,12 +268,12 @@ function AdminPanel({ p, onSaved }: { p: Player; onSaved: () => void }) {
       const d = fromISO(date); d.setMonth(d.getMonth() + k.months); expires = toISO(d);
     }
     const { error } = await supabase.from('credit_ledger').insert({
-      player_id: p.id, kind, sessions_delta: Number(s || 0), analyses_delta: Number(a || 0),
+      player_id: p.id, kind, sessions_delta: Number(s || 0), analyses_delta: Number(a || 0), pairs_delta: Number(pr || 0),
       package_name: kind === 'purchase' ? pkg || null : null, amount_paid: paid ? Number(paid) : null,
       reason: reason.trim(), effective_date: date, expires_on: expires,
     });
     if (error) setErr(errorText(error));
-    else { setMsg('Credits saved.'); setS(''); setA('0'); setPaid(''); setReason(''); setPkg(''); onSaved(); }
+    else { setMsg('Credits saved.'); setS(''); setA('0'); setPr('0'); setPaid(''); setReason(''); setPkg(''); onSaved(); }
   }
 
   async function saveSettings(e: React.FormEvent) {
@@ -300,6 +305,7 @@ function AdminPanel({ p, onSaved }: { p: Player; onSaved: () => void }) {
           )}
           <div className="row">
             <label className="field"><span>Sessions</span><input type="number" step="0.5" value={s} onChange={(e) => setS(e.target.value)} placeholder="e.g. 5 or -1" required /></label>
+            <label className="field"><span>2:1 sessions</span><input type="number" step="0.5" value={pr} onChange={(e) => setPr(e.target.value)} /></label>
             <label className="field"><span>Analyses</span><input type="number" step="1" value={a} onChange={(e) => setA(e.target.value)} /></label>
           </div>
           <div className="row">
@@ -355,18 +361,19 @@ function RecordPackage({ playerId, name, onSaved }: { playerId: string; name: st
   const [err, setErr] = useState('');
   const [tS, setTS] = useState('');
   const [tA, setTA] = useState('0');
+  const [tP, setTP] = useState('0');
   const [tPrice, setTPrice] = useState('');
   const tailored = pkg === TAILORED;
   const k = tailored
-    ? { name: 'Tailored package', s: Number(tS || 0), a: Number(tA || 0), price: Number(tPrice || 0), months: 0 }
-    : PACKAGES.find((x) => x.name === pkg);
+    ? { name: 'Tailored package', s: Number(tS || 0), a: Number(tA || 0), p: Number(tP || 0), price: Number(tPrice || 0), months: 0 }
+    : (() => { const x = PACKAGES.find((y) => y.name === pkg); return x ? { ...x, p: 0 } : undefined; })();
 
   async function save(e: React.FormEvent) {
     e.preventDefault(); setErr(''); setMsg('');
     if (!k) { setErr('Pick the package first.'); return; }
     if (tailored) {
-      if (!Number.isInteger(k.s) || !Number.isInteger(k.a) || k.s < 0 || k.a < 0 || k.s + k.a === 0) {
-        setErr('Enter the number of sessions and/or game analyses (whole numbers).'); return;
+      if (!Number.isInteger(k.s) || !Number.isInteger(k.a) || !Number.isInteger(k.p) || k.s < 0 || k.a < 0 || k.p < 0 || k.s + k.a + k.p === 0) {
+        setErr('Enter the number of 1:1 sessions, 2:1 sessions and/or game analyses (whole numbers).'); return;
       }
       if (!tPrice.trim() || !(k.price >= 0)) { setErr('Enter the price, ex GST.'); return; }
     }
@@ -374,11 +381,11 @@ function RecordPackage({ playerId, name, onSaved }: { playerId: string; name: st
     let expires: string | null = null;
     if (k.months) { const d = fromISO(date); d.setMonth(d.getMonth() + k.months); expires = toISO(d); }
     const { error } = await supabase.from('credit_ledger').insert({
-      player_id: playerId, kind: 'purchase', sessions_delta: k.s, analyses_delta: k.a,
+      player_id: playerId, kind: 'purchase', sessions_delta: k.s, analyses_delta: k.a, pairs_delta: k.p,
       package_name: k.name, amount_paid: k.price, payment_method: method || null,
       payment_status: isAdmin && method ? 'confirmed' : 'awaiting',
       reason: tailored
-        ? `Tailored package: ${k.s} session${k.s === 1 ? '' : 's'}${k.a ? `, ${k.a} game ${k.a === 1 ? 'analysis' : 'analyses'}` : ''}`
+        ? `Tailored package: ${k.s} session${k.s === 1 ? '' : 's'}${k.p ? `, ${k.p} 2:1 session${k.p === 1 ? '' : 's'}` : ''}${k.a ? `, ${k.a} game ${k.a === 1 ? 'analysis' : 'analyses'}` : ''}`
         : `Bought ${k.name}`,
       effective_date: date, expires_on: expires,
     });
@@ -387,7 +394,7 @@ function RecordPackage({ playerId, name, onSaved }: { playerId: string; name: st
     setMsg(isAdmin
       ? `${k.name} added for ${name}${method ? ', payment checked.' : '. Confirm the payment in the credit history once it arrives.'}`
       : `${k.name} added for ${name}. The credits work straight away, and Jan will check the payment.`);
-    setPkg(''); setMethod(''); setTS(''); setTA('0'); setTPrice(''); onSaved();
+    setPkg(''); setMethod(''); setTS(''); setTA('0'); setTP('0'); setTPrice(''); onSaved();
   }
 
   return (
@@ -406,8 +413,10 @@ function RecordPackage({ playerId, name, onSaved }: { playerId: string; name: st
           </div>
           {tailored && (
             <div className="row mt" style={{ flexWrap: 'wrap' }}>
-              <label className="field" style={{ flex: '1 1 90px' }}><span>Sessions</span>
+              <label className="field" style={{ flex: '1 1 90px' }}><span>1:1 sessions</span>
                 <input type="number" inputMode="numeric" min={0} step={1} value={tS} onChange={(e) => setTS(e.target.value)} placeholder="e.g. 8" /></label>
+              <label className="field" style={{ flex: '1 1 90px' }}><span>2:1 sessions</span>
+                <input type="number" inputMode="numeric" min={0} step={1} value={tP} onChange={(e) => setTP(e.target.value)} /></label>
               <label className="field" style={{ flex: '1 1 90px' }}><span>Game analyses</span>
                 <input type="number" inputMode="numeric" min={0} step={1} value={tA} onChange={(e) => setTA(e.target.value)} /></label>
               <label className="field" style={{ flex: '1 1 110px' }}><span>Price, ex GST ($)</span>

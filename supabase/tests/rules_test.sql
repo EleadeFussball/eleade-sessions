@@ -855,6 +855,31 @@ select public.submit_invoice('00000000-0000-0000-0000-0000000000c3', pg_temp.las
 select pg_temp.check('Paul can invoice without ABN or bank details',
   (select total > 0 and bsb = '' and coach_abn = '' and coach_legal_name = 'Paul' from public.coach_invoices where id = :'paulinv'));
 
+-- ---------- 2:1 credits are a separate pool for families that have them ----------
+reset role;
+insert into public.players (id, name, family) values
+  ('00000000-0000-0000-0000-0000000e0001', 'Pair Brother A', 'Pair Family'),
+  ('00000000-0000-0000-0000-0000000e0002', 'Pair Brother B', 'Pair Family'),
+  ('00000000-0000-0000-0000-0000000e0003', 'Plain Friend', null);
+insert into public.credit_ledger (player_id, kind, sessions_delta, pairs_delta, reason) values
+  ('00000000-0000-0000-0000-0000000e0001', 'purchase', 10, 5, 'test'),
+  ('00000000-0000-0000-0000-0000000e0003', 'purchase', 4, 0, 'test');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select public.log_session(public.today_sydney(), '00000000-0000-0000-0000-0000000000c1', '2:1', 'attended',
+  array['00000000-0000-0000-0000-0000000e0001','00000000-0000-0000-0000-0000000e0002']::uuid[]) as pair1 \gset
+select pg_temp.check('a 2:1 with both brothers uses one 2:1 credit for the family and no 1:1 credit',
+  (select pairs_left = 4 and sessions_left = 10 from public.player_balances where player_id = '00000000-0000-0000-0000-0000000e0002'));
+select public.log_session(public.today_sydney(), '00000000-0000-0000-0000-0000000000c1', '1:1', 'attended',
+  array['00000000-0000-0000-0000-0000000e0002']::uuid[]) as pair2 \gset
+select pg_temp.check('a 1:1 for one brother uses the shared 1:1 credits only',
+  (select pairs_left = 4 and sessions_left = 9 from public.player_balances where player_id = '00000000-0000-0000-0000-0000000e0001'));
+select public.log_session(public.today_sydney(), '00000000-0000-0000-0000-0000000000c1', '2:1', 'attended',
+  array['00000000-0000-0000-0000-0000000e0003','00000000-0000-0000-0000-0000000e0001']::uuid[]) as pair3 \gset
+select pg_temp.check('without a 2:1 pool a 2:1 still uses a normal credit, and the family pool uses one',
+  (select sessions_left = 3 and pairs_left is null from public.player_balances where player_id = '00000000-0000-0000-0000-0000000e0003')
+  and (select pairs_left = 3 from public.player_balances where player_id = '00000000-0000-0000-0000-0000000e0001'));
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;

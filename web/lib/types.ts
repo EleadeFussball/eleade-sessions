@@ -25,6 +25,7 @@ export type PlayerBalance = {
   sessions_left: number | null;
   analyses_left: number | null;
   own_sessions_left: number | null;
+  pairs_left: number | null; // 2:1 credits, null when the player or family has no separate 2:1 credits
   last_session: string | null;
   last_purchase: string | null;
   next_expiry: string | null;
