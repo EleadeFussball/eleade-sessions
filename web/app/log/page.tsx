@@ -25,7 +25,7 @@ type Saved = { names: string[]; date: string; outcome: Outcome; format: Format; 
 
 export default function LogPage() {
   const { coach, coaches, isAdmin } = useAuth();
-  const { players, reload, createPlayer } = usePlayers();
+  const { players, reload, createPlayer } = usePlayers(true);
   const [date, setDate] = useState(todayISO());
   const [format, setFormat] = useState<Format>('1:1');
   const [ids, setIds] = useState<string[]>([]);
@@ -92,11 +92,8 @@ export default function LogPage() {
   }
 
   async function addPlayer(name: string) {
-    setErr('');
-    try {
-      const id = await createPlayer(name, coach?.id);
-      setIds(max === 1 ? [id] : [...ids, id]);
-    } catch (e) { setErr(errorText(e)); }
+    const id = await createPlayer(name, coach?.id);
+    setIds(max === 1 ? [id] : [...ids, id]);
   }
 
   async function save(e: React.FormEvent) {

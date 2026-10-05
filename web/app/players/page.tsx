@@ -4,19 +4,25 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { usePlayers, creditClass } from '@/lib/usePlayers';
 import { fmtDate, num } from '@/lib/dates';
+import { errorText } from '@/lib/supabase';
 
 type Filter = 'all' | 'mine' | 'low' | 'weekly';
 
 export default function PlayersPage() {
   const { coach, coaches } = useAuth();
-  const { players, loading, error } = usePlayers();
+  const { players, loading, error, createPlayer } = usePlayers(true);
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const [newName, setNewName] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addMsg, setAddMsg] = useState('');
+  const [addErr, setAddErr] = useState('');
   const coachName = (id: string | null) => coaches.find((c) => c.id === id)?.name ?? '';
 
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
     return players.filter((p) => {
+      if (p.active === false && !s) return false;
       if (s && !p.name.toLowerCase().includes(s)) return false;
       if (filter === 'mine') return p.main_coach_id === coach?.id;
       if (filter === 'low') return p.billing_model === 'package' && Number(p.sessions_left ?? 0) <= 2;
@@ -25,16 +31,37 @@ export default function PlayersPage() {
     });
   }, [players, q, filter, coach]);
 
+  const activeNow = players.filter((p) => p.active !== false);
   const counts = {
-    all: players.length,
-    mine: players.filter((p) => p.main_coach_id === coach?.id).length,
-    low: players.filter((p) => p.billing_model === 'package' && Number(p.sessions_left ?? 0) <= 2).length,
-    weekly: players.filter((p) => p.billing_model === 'pay_per_session').length,
+    all: activeNow.length,
+    mine: activeNow.filter((p) => p.main_coach_id === coach?.id).length,
+    low: activeNow.filter((p) => p.billing_model === 'package' && Number(p.sessions_left ?? 0) <= 2).length,
+    weekly: activeNow.filter((p) => p.billing_model === 'pay_per_session').length,
   };
 
   return (
     <>
       <h1>Players</h1>
+      <details className="panel" style={{ marginBottom: 12 }}>
+        <summary>Add a new player</summary>
+        <form onSubmit={async (e) => {
+          e.preventDefault(); setAddErr(''); setAddMsg('');
+          const name = newName.replace(/\s+/g, ' ').trim();
+          if (name.split(' ').length < 2) { setAddErr('Type their first name and surname.'); return; }
+          setAdding(true);
+          try {
+            await createPlayer(name.split(' ').map((w) => w[0].toUpperCase() + w.slice(1)).join(' '), coach?.id);
+            setAddMsg(`${name} was added. Find them in the list below.`); setNewName(''); setQ(name);
+          } catch (err) { setAddErr(errorText(err)); }
+          setAdding(false);
+        }}>
+          <label className="field"><span>First name and surname</span>
+            <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} autoComplete="off" /></label>
+          {addErr && <div className="notice err" role="alert">{addErr}</div>}
+          {addMsg && <div className="notice ok" role="status">{addMsg}</div>}
+          <button className="btn small" disabled={adding}>{adding ? 'Adding' : 'Add player'}</button>
+        </form>
+      </details>
       <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search players" aria-label="Search players" />
       <div className="seg mt" role="group" aria-label="Filter">
         {([['all', 'All'], ['mine', 'My players'], ['low', '2 or fewer left'], ['weekly', 'Pays weekly']] as [Filter, string][]).map(([k, l]) => (

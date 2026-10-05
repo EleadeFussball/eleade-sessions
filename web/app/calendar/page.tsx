@@ -18,7 +18,7 @@ const LENGTHS = [45, 60, 90, 120];
 
 export default function CalendarPage() {
   const { coach, coaches, isAdmin } = useAuth();
-  const { players, createPlayer } = usePlayers();
+  const { players, createPlayer } = usePlayers(true);
   const [view, setView] = useState<'week' | 'day'>('week');
   const [anchor, setAnchor] = useState(todayISO());
   // whose calendar: 'me' (always first), 'all', or one coach's id (Jan only)
@@ -213,10 +213,8 @@ function AddSession({ slot, players, createPlayer, defaultCoach, onSaved, onCanc
         <PlayerPicker players={players} selected={ids} max={MAX_PLAYERS[format]} onChange={setIds}
                       onCreate={async (name) => {
                         onError('');
-                        try {
-                          const id = await createPlayer(name, coachId || coach?.id);
-                          setIds(MAX_PLAYERS[format] === 1 ? [id] : [...ids, id]);
-                        } catch (e) { onError(errorText(e)); }
+                        const id = await createPlayer(name, coachId || coach?.id);
+                        setIds(MAX_PLAYERS[format] === 1 ? [id] : [...ids, id]);
                       }} />
       </div>
       <div className="row">

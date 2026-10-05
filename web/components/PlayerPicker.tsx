@@ -13,6 +13,7 @@ type Props = {
 };
 
 export function CreditBadge({ p }: { p: PlayerBalance }) {
+  if (p.active === false) return <span className="tag">Not active</span>;
   if (p.billing_model === 'pay_per_session') return <span className="tag">Pays weekly</span>;
   if (!p.last_session && !p.last_purchase && Number(p.sessions_left ?? 0) === 0) return <span className="tag">New</span>;
   const cls = creditClass(p);
@@ -22,6 +23,7 @@ export function CreditBadge({ p }: { p: PlayerBalance }) {
 export function PlayerPicker({ players, selected, max, onChange, onCreate }: Props) {
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState(false);
+  const [addErr, setAddErr] = useState('');
   const chosen = selected.map((id) => players.find((p) => p.player_id === id)).filter(Boolean) as PlayerBalance[];
   const full = selected.length >= max;
 
@@ -65,19 +67,27 @@ export function PlayerPicker({ players, selected, max, onChange, onCreate }: Pro
               ))}
             </ul>
           )}
-          {q.trim() && matches.length === 0 && (
+          {q.trim() && !players.some((p) => p.name.toLowerCase() === q.trim().replace(/\s+/g, ' ').toLowerCase()) && (
             onCreate ? (
               <div className="newplayer">
                 <p className="hint" style={{ marginBottom: 8 }}>
-                  No player called “{q.trim()}” yet.
-                  {q.trim().split(/\s+/).length < 2 && ' Add their surname too, so nobody is mixed up.'}
+                  {matches.length === 0 ? `No player called “${q.trim()}” yet. ` : 'Not in the list above? '}
+                  {q.trim().split(/\s+/).length < 2
+                    ? 'To add a new player, type their first name and surname.'
+                    : 'You can add them as a new player.'}
                 </p>
                 <button type="button" className="btn small" disabled={adding || q.trim().split(/\s+/).length < 2}
-                        onClick={async () => { setAdding(true); await onCreate(titleCase(q.trim())); setAdding(false); setQ(''); }}>
+                        onClick={async () => {
+                          setAdding(true); setAddErr('');
+                          try { await onCreate(titleCase(q.trim())); setQ(''); }
+                          catch (e) { setAddErr(e instanceof Error ? e.message : 'The player could not be added.'); }
+                          setAdding(false);
+                        }}>
                   {adding ? 'Adding' : `+ Add ${titleCase(q.trim())} as a new player`}
                 </button>
+                {addErr && <div className="notice err" role="alert" style={{ marginTop: 8 }}>{addErr}</div>}
               </div>
-            ) : <p className="hint mt">No active player matches “{q.trim()}”.</p>
+            ) : matches.length === 0 ? <p className="hint mt">No active player matches “{q.trim()}”.</p> : null
           )}
         </>
       )}

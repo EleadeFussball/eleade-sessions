@@ -880,6 +880,16 @@ select pg_temp.check('without a 2:1 pool a 2:1 still uses a normal credit, and t
   (select sessions_left = 3 and pairs_left is null from public.player_balances where player_id = '00000000-0000-0000-0000-0000000e0003')
   and (select pairs_left = 3 from public.player_balances where player_id = '00000000-0000-0000-0000-0000000e0001'));
 
+-- ---------- a player who is not training comes back when a session is booked for them ----------
+reset role;
+update public.players set active = false where id = '00000000-0000-0000-0000-0000000e0003';
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select public.log_session(public.today_sydney(), '00000000-0000-0000-0000-0000000000c1', '1:1', 'attended',
+  array['00000000-0000-0000-0000-0000000e0003']::uuid[]) as react1 \gset
+select pg_temp.check('logging a session for an inactive player makes them active again',
+  (select active from public.players where id = '00000000-0000-0000-0000-0000000e0003'));
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;

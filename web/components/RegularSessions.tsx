@@ -17,7 +17,7 @@ const FORMATS: Format[] = ['1:1', '2:1', '4:1', 'analysis'];
 
 export function RegularSessions({ playerId }: { playerId: string }) {
   const { coach, coaches, isAdmin } = useAuth();
-  const { players, createPlayer } = usePlayers();
+  const { players, createPlayer } = usePlayers(true);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [adding, setAdding] = useState(false);
   const [weekday, setWeekday] = useState(0);
@@ -126,10 +126,8 @@ export function RegularSessions({ playerId }: { playerId: string }) {
                             onChange={(next) => setIds(next.includes(playerId) ? next : [playerId, ...next])}
                             onCreate={async (name) => {
                               setErr('');
-                              try {
-                                const id = await createPlayer(name, coachId || coach?.id);
-                                setIds([...ids, id]);
-                              } catch (e) { setErr(errorText(e)); }
+                              const id = await createPlayer(name, coachId || coach?.id);
+                              setIds([...ids, id]);
                             }} />
             </div>
           )}
