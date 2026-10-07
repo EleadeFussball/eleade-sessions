@@ -1,0 +1,20 @@
+name: Nightly backup to Google Drive
+on:
+  schedule:
+    - cron: '30 15 * * *'   # 02:30 Sydney (AEDT) / 01:30 (AEST)
+  workflow_dispatch: {}
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --no-save --prefix scripts/backup exceljs
+      - run: node scripts/backup/run.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          DRIVE_FILE_ID: ${{ secrets.DRIVE_FILE_ID }}

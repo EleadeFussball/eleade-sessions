@@ -79,3 +79,8 @@ Parent portal, Stripe purchases, automatic renewal emails, package expiry remind
 
 - Supabase's built-in email sender only sends a few sign-in emails per hour. That's fine for a handful of coaches, because each person stays signed in. If someone doesn't get their email, wait an hour, or connect your Google Workspace email under **Authentication > Emails > SMTP Settings**.
 - `devserver/` runs the whole app locally against a local database for testing. It isn't needed to go live.
+
+## Backup
+
+Nightly (02:30 Sydney) GitHub Actions job `.github/workflows/nightly-backup.yml` runs `scripts/backup/run.mjs`: it reads all tables with the Supabase service key, builds an Excel workbook (`web/lib/backup-workbook.mjs`, shared with the Admin "Download everything" button) and overwrites one file in Google Drive (Drive keeps earlier versions).
+Secrets needed in the GitHub repo: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `DRIVE_FILE_ID` (an .xlsx owned by the business, shared with the service account as Editor).

@@ -8,6 +8,7 @@ import { addDays, fmtDate, fmtWeek, money, num, todayISO, weekStart, isoWeek } f
 import { invoiceNo, type CoachInvoice, type PlayerBalance } from '@/lib/types';
 import { buildAba, type AbaPayer } from '@/lib/bank';
 import { StripeInbox } from '@/components/StripeInbox';
+import { BackupDownload } from '@/components/BackupDownload';
 
 type Expiring = { player_id: string; name: string; family: string | null; package_name: string | null; expires_on: string; days_left: number; sessions_left: number | null; analyses_left: number | null };
 type Missing = { player_id: string; name: string; main_coach_id: string | null; last_logged: string | null };
@@ -236,6 +237,8 @@ export default function AdminPage() {
         </table>
       )}
       <p className="hint mt">Each coach&apos;s line matches what they see under My week, so their invoice can be paid without checking. Salaried staff are not listed.</p>
+
+      <BackupDownload />
     </>
   );
 }

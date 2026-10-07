@@ -6,3 +6,6 @@ node_modules
 next-env.d.ts
 devserver/node_modules
 devserver/package-lock.json
+scripts/backup/node_modules
+scripts/backup/eleade-backup.xlsx
+eleade-backup.xlsx
