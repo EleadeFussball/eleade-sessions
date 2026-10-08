@@ -28,15 +28,16 @@ export default function WeekPage() {
   const router = useRouter();
 
   useEffect(() => { if (coach && !coachId) setCoachId(coach.id); }, [coach, coachId]);
+  const invoiceUntil = addDays(start, 6) < todayISO() ? addDays(start, 6) : todayISO();
   const loadInvoices = useCallback(async () => {
     if (!coachId) return;
     const [d, i] = await Promise.all([
-      supabase.rpc('invoice_draft', { p_coach_id: coachId, p_until: addDays(start, 6) }),
+      supabase.rpc('invoice_draft', { p_coach_id: coachId, p_until: invoiceUntil }),
       supabase.from('coach_invoices').select('*').eq('coach_id', coachId).order('number', { ascending: false }).limit(12),
     ]);
     setDraft((d.data as InvoiceLine[]) ?? []);
     setInvoices((i.data as CoachInvoice[]) ?? []);
-  }, [coachId, start]);
+  }, [coachId, invoiceUntil]);
   useEffect(() => { loadInvoices(); }, [loadInvoices]);
   useEffect(() => { setReview(false); setTicked(false); setErr(''); }, [coachId, start]);
 
@@ -93,14 +94,13 @@ export default function WeekPage() {
   const selected = coaches.find((c) => c.id === coachId);
   const salaried = !!selected?.salaried;
   const weekEnd = addDays(start, 6);
-  const weekOver = weekEnd <= todayISO();
   const draftTotal = draft.reduce((t, l) => t + Number(l.amount), 0);
   const draftNoRate = draft.some((l) => l.no_rate);
-  const thisWeeks = invoices.filter((i) => i.period_end === weekEnd);
+  const thisWeeks = invoices.filter((i) => i.period_end >= start && i.period_end <= weekEnd);
 
   async function submit() {
     setBusy(true); setErr('');
-    const { data, error } = await supabase.rpc('submit_invoice', { p_coach_id: coachId, p_until: weekEnd });
+    const { data, error } = await supabase.rpc('submit_invoice', { p_coach_id: coachId, p_until: invoiceUntil });
     setBusy(false);
     if (error) { setErr(errorText(error)); return; }
     router.push(`/invoices/${data as string}`);
@@ -184,9 +184,7 @@ export default function WeekPage() {
               </table>
               {draft.some((l) => l.line_date < start) && <p className="hint">Includes earlier sessions that were logged late or changed after an invoice.</p>}
               {err && <div className="notice err" role="alert">{err}</div>}
-              {coachId !== coach?.id && !isAdmin ? null : !weekOver ? (
-                <p className="hint">You can submit this invoice on Sunday, once the week is over.</p>
-              ) : draftNoRate ? (
+              {coachId !== coach?.id && !isAdmin ? null : draftNoRate ? (
                 <div className="notice warn">Some session types have no pay rate yet. Jan sets rates on the Team page.</div>
               ) : draftTotal <= 0 ? (
                 <p className="hint">{draftTotal < 0 ? 'You kept more cash than you earned, so the invoice total is below zero. It is not sent now. The difference carries into your next invoice automatically.' : 'Nothing to pay for this week.'}</p>
@@ -196,7 +194,7 @@ export default function WeekPage() {
                 ) : (
                   <div className="panel-form">
                     <h3 style={{ marginTop: 0 }}>Check before you send</h3>
-                    <p>Invoice for week {isoWeek(start)}: <strong>{money(draftTotal)}</strong> ({draft.length} {draft.length === 1 ? 'line' : 'lines'}, no GST).</p>
+                    <p>Invoice for week {isoWeek(start)}{weekEnd > todayISO() ? ` (up to today)` : ''}: <strong>{money(draftTotal)}</strong> ({draft.length} {draft.length === 1 ? 'line' : 'lines'}, no GST).</p>
                     <p className="hint">Once it is sent, Jan pays it as it is. Anything you forgot to log goes on your next invoice as a separate line.</p>
                     {!selected?.paid_separately && (!details?.abn || !details.bsb || !details.account_number) && (
                       <div className="notice warn">Your ABN and bank details are missing. Add them on the <Link href="/account">Account</Link> page first, then come back.</div>

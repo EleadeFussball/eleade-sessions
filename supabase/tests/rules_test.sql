@@ -890,6 +890,40 @@ select public.log_session(public.today_sydney(), '00000000-0000-0000-0000-000000
 select pg_temp.check('logging a session for an inactive player makes them active again',
   (select active from public.players where id = '00000000-0000-0000-0000-0000000e0003'));
 
+-- ---------- invoice at any time ----------
+reset role;
+insert into public.sessions (id, session_date, coach_id, format, outcome) values
+  ('00000000-0000-0000-0000-0000000d0009', public.today_sydney(), '00000000-0000-0000-0000-0000000000c4', '1:1', 'attended');
+insert into public.session_players values ('00000000-0000-0000-0000-0000000d0009', '00000000-0000-0000-0000-0000000000b1');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a4';
+select public.submit_invoice('00000000-0000-0000-0000-0000000000c4', public.today_sydney()) as inv_mid \gset
+select pg_temp.check('a coach can send an invoice on any day, up to today',
+  (select total > 0 and period_end = public.today_sydney() and extract(isodow from period_start) = 1 from public.coach_invoices where id = :'inv_mid'));
+do $$ begin
+  begin
+    perform public.submit_invoice('00000000-0000-0000-0000-0000000000c4', public.today_sydney() + 1);
+    perform pg_temp.check('an invoice cannot run past today', false);
+  exception when others then perform pg_temp.check('an invoice cannot run past today', sqlerrm like '%up to today%');
+  end;
+end $$;
+
+-- ---------- Player Name on the payment link ----------
+reset role;
+insert into public.players (id, name) values ('00000000-0000-0000-0000-0000000e00a1', 'Named Nina');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.log_session(public.today_sydney(), '00000000-0000-0000-0000-0000000000c2', '1:1', 'attended',
+  array['00000000-0000-0000-0000-0000000e00a1']::uuid[], null, null, null, null, null, 'stripe') as nina_s \gset
+reset role;
+select public.record_stripe_payment_named('cs_name_1', null, 132, 'aud', 'p@test', 'Nina Parent', now(), '  named   NINA ');
+select pg_temp.check('the Player Name on the link finds the player and pays the waiting session',
+  (select player_id = '00000000-0000-0000-0000-0000000e00a1' and applied_session_id = :'nina_s' and player_name_entered = 'named   NINA' from public.stripe_payments where stripe_session_id = 'cs_name_1')
+  and (select payment_status = 'confirmed' from public.sessions where id = :'nina_s'));
+select public.record_stripe_payment_named('cs_name_3', null, 132, 'aud', 'p@test', 'Parent', now(), 'Nobody Known');
+select pg_temp.check('an unknown name is left for Jan to assign',
+  (select player_id is null from public.stripe_payments where stripe_session_id = 'cs_name_3'));
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;

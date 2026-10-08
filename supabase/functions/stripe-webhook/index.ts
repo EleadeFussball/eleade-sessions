@@ -48,7 +48,10 @@ Deno.serve(async (req) => {
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
     auth: { persistSession: false },
   });
-  const { error } = await db.rpc('record_stripe_payment', {
+  // "Player Name" field on the payment link (Stripe custom field)
+  const fields: { key?: string; label?: { custom?: string }; text?: { value?: string } }[] = s.custom_fields ?? [];
+  const playerField = fields.find((f) => /player/i.test(`${f.key ?? ''} ${f.label?.custom ?? ''}`));
+  const { error } = await db.rpc('record_stripe_payment_named', {
     p_stripe_session_id: s.id,
     p_reference: s.client_reference_id ?? null,
     p_amount_total: (s.amount_total ?? 0) / 100,
@@ -56,6 +59,7 @@ Deno.serve(async (req) => {
     p_email: s.customer_details?.email ?? null,
     p_name: s.customer_details?.name ?? null,
     p_paid_at: new Date((s.created ?? event.created ?? Date.now() / 1000) * 1000).toISOString(),
+    p_player_name: playerField?.text?.value ?? null,
   });
   if (error) {
     console.error('record_stripe_payment failed', error.message);

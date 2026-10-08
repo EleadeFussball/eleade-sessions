@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
+import { todayISO, fromISO } from '@/lib/dates';
 
 const TABS = [
   { href: '/log', label: 'Log', admin: false },
@@ -23,6 +24,21 @@ export function Shell({ children }: { children: ReactNode }) {
   const isLogin = path === '/login';
   const [newEnquiries, setNewEnquiries] = useState(0);
   const [invoicesWaiting, setInvoicesWaiting] = useState(0);
+  const [invoiceDue, setInvoiceDue] = useState(0);
+
+  // Reminder for coaches: from Sunday 5pm (Sydney) until the invoice is sent, if there is anything to invoice.
+  useEffect(() => {
+    if (!coach || coach.salaried) return;
+    const hour = Number(new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
+    const dow = fromISO(todayISO()).getDay(); // 0 = Sunday, 1 = Monday
+    if (!((dow === 0 && hour >= 17) || dow === 1)) { setInvoiceDue(0); return; }
+    let alive = true;
+    supabase.rpc('invoice_draft', { p_coach_id: coach.id, p_until: todayISO() }).then(({ data }) => {
+      const total = ((data as { amount: number }[]) ?? []).reduce((t, l) => t + Number(l.amount), 0);
+      if (alive) setInvoiceDue(total > 0 ? total : 0);
+    });
+    return () => { alive = false; };
+  }, [coach, path]);
 
   // Jan sees how many enquiries still need a coach; a coach sees how many are waiting for them.
   useEffect(() => {
@@ -72,6 +88,11 @@ export function Shell({ children }: { children: ReactNode }) {
         {!session.user.user_metadata?.password_set && path !== '/account' && (
           <div className="notice warn">
             Set a password so you can sign in without waiting for an email. <Link href="/account">Set password</Link>
+          </div>
+        )}
+        {invoiceDue > 0 && path !== '/week' && (
+          <div className="notice warn">
+            Time to send your invoice for this week. <Link href="/week">Review and send</Link>
           </div>
         )}
         {children}
