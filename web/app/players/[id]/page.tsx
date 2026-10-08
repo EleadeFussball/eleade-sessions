@@ -149,6 +149,8 @@ export default function PlayerPage() {
         <div className="notice">Pays per session by weekly bank transfer{p.session_price ? `, ${money(p.session_price)} a session` : ''}. No credits to track.</div>
       )}
 
+      {isAdmin && <PaymentSettings p={p} onSaved={load} />}
+
       {p.profile_notes && <div className="notice ok"><strong>Arrangement:</strong> {p.profile_notes}</div>}
 
       <EnquiryInfo playerId={p.id} />
@@ -219,7 +221,7 @@ export default function PlayerPage() {
         </table>
       )}
 
-      {p.billing_model === 'package' && <RecordPackage playerId={p.id} name={p.name} onSaved={load} />}
+      {(p.billing_model === 'package' || isAdmin) && <RecordPackage playerId={p.id} name={p.name} billing={p.billing_model} onSaved={load} />}
       {isAdmin && <AdminPanel p={p} onSaved={load} />}
 
       {err && <div className="notice err">{err}</div>}
@@ -246,8 +248,6 @@ function AdminPanel({ p, onSaved }: { p: Player; onSaved: () => void }) {
   const [date, setDate] = useState(todayISO());
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
-  const [model, setModel] = useState(p.billing_model);
-  const [price, setPrice] = useState(p.session_price?.toString() ?? '');
   const [main, setMain] = useState(p.main_coach_id ?? '');
   const [family, setFamily] = useState(p.family ?? '');
   const [arr, setArr] = useState(p.profile_notes ?? '');
@@ -279,7 +279,7 @@ function AdminPanel({ p, onSaved }: { p: Player; onSaved: () => void }) {
   async function saveSettings(e: React.FormEvent) {
     e.preventDefault(); setErr(''); setMsg('');
     const { error } = await supabase.from('players').update({
-      billing_model: model, session_price: price ? Number(price) : null, main_coach_id: main || null,
+      main_coach_id: main || null,
       family: family.trim() || null, profile_notes: arr.trim() || null, active, opening_confirmed: confirmed,
     }).eq('id', p.id);
     if (error) setErr(errorText(error)); else { setMsg('Player saved.'); onSaved(); }
@@ -319,14 +319,6 @@ function AdminPanel({ p, onSaved }: { p: Player; onSaved: () => void }) {
       <details className="panel">
         <summary>Player settings</summary>
         <form onSubmit={saveSettings}>
-          <div className="seg" style={{ marginBottom: 12 }}>
-            <button type="button" aria-pressed={model === 'package'} onClick={() => setModel('package')}>Package</button>
-            <button type="button" aria-pressed={model === 'pay_per_session'} onClick={() => setModel('pay_per_session')}>Pays per session</button>
-          </div>
-          {model === 'pay_per_session' && (
-            <label className="field"><span>Price per session, ex GST <span className="hint">(blank uses the default)</span></span>
-              <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} /></label>
-          )}
           <div className="row">
             <label className="field"><span>Main coach</span>
               <select value={main} onChange={(e) => setMain(e.target.value)}>
@@ -351,7 +343,7 @@ function AdminPanel({ p, onSaved }: { p: Player; onSaved: () => void }) {
   );
 }
 
-function RecordPackage({ playerId, name, onSaved }: { playerId: string; name: string; onSaved: () => void }) {
+function RecordPackage({ playerId, name, billing, onSaved }: { playerId: string; name: string; billing: Player['billing_model']; onSaved: () => void }) {
   const { isAdmin } = useAuth();
   const [pkg, setPkg] = useState('');
   const [method, setMethod] = useState<PaymentMethod | ''>('');
@@ -380,6 +372,10 @@ function RecordPackage({ playerId, name, onSaved }: { playerId: string; name: st
     setBusy(true);
     let expires: string | null = null;
     if (k.months) { const d = fromISO(date); d.setMonth(d.getMonth() + k.months); expires = toISO(d); }
+    if (billing === 'pay_per_session' && isAdmin) {
+      const sw = await supabase.from('players').update({ billing_model: 'package' }).eq('id', playerId);
+      if (sw.error) { setBusy(false); setErr(errorText(sw.error)); return; }
+    }
     const { error } = await supabase.from('credit_ledger').insert({
       player_id: playerId, kind: 'purchase', sessions_delta: k.s, analyses_delta: k.a, pairs_delta: k.p,
       package_name: k.name, amount_paid: k.price, payment_method: method || null,
@@ -392,14 +388,14 @@ function RecordPackage({ playerId, name, onSaved }: { playerId: string; name: st
     setBusy(false);
     if (error) { setErr(errorText(error)); return; }
     setMsg(isAdmin
-      ? `${k.name} added for ${name}${method ? ', payment checked.' : '. Confirm the payment in the credit history once it arrives.'}`
+      ? `${k.name} added for ${name}${billing === 'pay_per_session' ? ', who is now on a package' : ''}${method ? ', payment checked.' : '. Confirm the payment in the credit history once it arrives.'}`
       : `${k.name} added for ${name}. The credits work straight away, and Jan will check the payment.`);
     setPkg(''); setMethod(''); setTS(''); setTA('0'); setTP('0'); setTPrice(''); onSaved();
   }
 
   return (
     <details className="panel">
-      <summary>Record a package bought</summary>
+      <summary>{billing === 'pay_per_session' ? 'Record a package bought (switches to package)' : 'Record a package bought'}</summary>
       <form onSubmit={save}>
         <div className="field">
           <span className="fieldlabel">Package</span>
@@ -438,6 +434,48 @@ function RecordPackage({ playerId, name, onSaved }: { playerId: string; name: st
         {err && <div className="notice err" role="alert">{err}</div>}
         {msg && <div className="notice ok" role="status">{msg}</div>}
         <button className="btn small" disabled={busy}>{busy ? 'Saving' : 'Add package'}</button>
+      </form>
+    </details>
+  );
+}
+
+/** How this player pays. Jan can change it at any time; credits and history are kept. */
+function PaymentSettings({ p, onSaved }: { p: Player; onSaved: () => void }) {
+  const [model, setModel] = useState(p.billing_model);
+  const [price, setPrice] = useState(p.session_price?.toString() ?? '');
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+  useEffect(() => { setModel(p.billing_model); setPrice(p.session_price?.toString() ?? ''); }, [p.billing_model, p.session_price]);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault(); setErr(''); setMsg('');
+    const { error } = await supabase.from('players').update({
+      billing_model: model, session_price: model === 'pay_per_session' && price ? Number(price) : null,
+    }).eq('id', p.id);
+    if (error) setErr(errorText(error)); else { setMsg('Payment settings saved.'); onSaved(); }
+  }
+
+  return (
+    <details className="panel">
+      <summary>Payment settings: {p.billing_model === 'package' ? 'Package' : 'Pays weekly'}</summary>
+      <form onSubmit={save}>
+        <div className="seg" style={{ marginBottom: 12 }}>
+          <button type="button" aria-pressed={model === 'package'} onClick={() => setModel('package')}>Package</button>
+          <button type="button" aria-pressed={model === 'pay_per_session'} onClick={() => setModel('pay_per_session')}>Pays weekly</button>
+        </div>
+        {model === 'package' ? (
+          <p className="hint"><strong>Package:</strong> prepaid credits that count down with each session. Choose 5 pack, 10 pack, Monthly or a tailored package under &quot;Record a package bought&quot;. The payment is recorded as Stripe, bank transfer, cash or other.</p>
+        ) : (
+          <>
+            <p className="hint"><strong>Pays weekly:</strong> no credits. Sessions are added up each week and paid by bank transfer, and you mark the week as paid on the Admin page.</p>
+            <label className="field"><span>Price per session, ex GST <span className="hint">(blank uses the default)</span></span>
+              <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} /></label>
+          </>
+        )}
+        <p className="hint">Single sessions and assessments can also be paid one by one: the coach picks Stripe link, bank transfer or cash when logging the session. Changing the setting keeps all credits and history. Recording a package for a weekly player switches them to a package.</p>
+        {msg && <div className="notice ok">{msg}</div>}
+        {err && <div className="notice err">{err}</div>}
+        <button className="btn small">Save payment settings</button>
       </form>
     </details>
   );
