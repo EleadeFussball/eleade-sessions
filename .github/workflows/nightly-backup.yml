@@ -18,3 +18,8 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
           BACKUP_SECRET: ${{ secrets.BACKUP_SECRET }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eleade-backup-${{ github.run_id }}
+          path: eleade-backup.xlsx
+          retention-days: 90

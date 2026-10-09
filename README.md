@@ -84,3 +84,4 @@ Parent portal, Stripe purchases, automatic renewal emails, package expiry remind
 
 Nightly (02:30 Sydney) GitHub Actions job `.github/workflows/nightly-backup.yml` runs `scripts/backup/run.mjs`: it reads all tables with the Supabase service key, builds an Excel workbook (`web/lib/backup-workbook.mjs`, shared with the Admin "Download everything" button) and sends it to a Google Apps Script web app (`scripts/backup/drive-receiver.gs`, runs as the Drive owner, no service account key needed) that overwrites one file in Google Drive (Drive keeps earlier versions).
 Secrets needed in the GitHub repo: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `APPS_SCRIPT_URL` (the web app URL), `BACKUP_SECRET` (same value as in the script properties).
+The workflow also keeps every nightly workbook as a GitHub Actions artifact for 90 days (Actions tab > run > Artifacts), so Drive is optional.
