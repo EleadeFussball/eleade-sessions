@@ -4,8 +4,16 @@ import fs from 'node:fs';
 import ExcelJS from 'exceljs';
 import { buildBackupWorkbook } from '../../web/lib/backup-workbook.mjs';
 
-const { SUPABASE_URL, SUPABASE_SERVICE_KEY, APPS_SCRIPT_URL, BACKUP_SECRET } = process.env;
-if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_KEY are required');
+const env = process.env;
+const SUPABASE_URL = env.SUPABASE_URL?.trim().replace(/\/$/, ''), SUPABASE_SERVICE_KEY = env.SUPABASE_SERVICE_KEY?.trim();
+const { APPS_SCRIPT_URL, BACKUP_SECRET } = env;
+// Errors are reported as GitHub annotations so they show on the run summary page (never the key itself).
+const report = (e) => { console.log(`::error::${String(e?.cause?.code ?? '')} ${String(e?.message ?? e).replace(/\s+/g, ' ').slice(0, 500)}`); process.exit(1); };
+process.on('uncaughtException', report); process.on('unhandledRejection', report);
+if (!SUPABASE_URL) throw new Error('Secret SUPABASE_URL is missing or empty');
+if (!SUPABASE_SERVICE_KEY) throw new Error('Secret SUPABASE_SERVICE_KEY is missing or empty');
+if (!/^https:\/\/[a-z0-9]+\.supabase\.co\/?$/.test(SUPABASE_URL.trim())) throw new Error(`SUPABASE_URL looks wrong (length ${SUPABASE_URL.length}, starts "${SUPABASE_URL.slice(0, 12)}")`);
+console.log(`Key type: ${SUPABASE_SERVICE_KEY.trim().slice(0, 9)}..., length ${SUPABASE_SERVICE_KEY.length}`);
 
 async function fetchTable(table) {
   const rows = [];
