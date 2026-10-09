@@ -12,7 +12,7 @@ async function fetchTable(table) {
   const rows = [];
   for (let from = 0; ; from += 1000) {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=*`, {
-      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, Range: `${from}-${from + 999}`, 'Range-Unit': 'items' },
+      headers: { apikey: SUPABASE_SERVICE_KEY, ...(SUPABASE_SERVICE_KEY.startsWith('sb_') ? {} : { Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }), Range: `${from}-${from + 999}`, 'Range-Unit': 'items' },
     });
     if (!r.ok) throw new Error(`${table}: ${r.status} ${await r.text()}`);
     const page = await r.json();
