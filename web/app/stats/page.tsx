@@ -11,6 +11,7 @@ type Row = { session_id: string; session_date: string; week_start: string; coach
 type Money = { received_on: string; source: string; amount: number };
 type Move = { plan_id: string; plan_date: string; coach_id: string; coach_name: string };
 type PlayerOutcome = { player_id: string; name: string; session_date: string; outcome: Outcome };
+type Owner = { week_start: string; salary_cost: number; elle_amount: number; elle_hours: number; tyler_commission: number };
 type History = { week_start: string; iso_week: number; coach_name: string | null; sessions: number; analyses: number; pay: number | null };
 
 // Jan's assumptions (4 Oct 2026), ex GST: every session is charged $120, an assessment $130,
@@ -51,6 +52,7 @@ export default function StatsPage() {
   const [moneyIn, setMoneyIn] = useState<Money[]>([]);
   const [moves, setMoves] = useState<Move[]>([]);
   const [po, setPo] = useState<PlayerOutcome[]>([]);
+  const [owner, setOwner] = useState<Owner[]>([]);
   const [loading, setLoading] = useState(true);
 
   const to = addDays(toWeek, 6);
@@ -81,7 +83,9 @@ export default function StatsPage() {
       fetchAll<Move>((a, b) => supabase.from('stats_moves').select('plan_id, plan_date, coach_id, coach_name').gte('plan_date', from).lte('plan_date', to).range(a, b)),
       fetchAll<PlayerOutcome>((a, b) => supabase.from('stats_player_outcomes').select('*').gte('session_date', from).lte('session_date', to).range(a, b)),
       supabase.from('settings').select('value').eq('key', 'stats_history_until').maybeSingle(),
-    ]).then(([a, da, h, b, c, d, hu]) => {
+      supabase.from('owner_weeks').select('week_start, salary_cost, elle_amount, elle_hours, tyler_commission').order('week_start'),
+    ]).then(([a, da, h, b, c, d, hu, ow]) => {
+      setOwner((ow.data as Owner[]) ?? []);
       setRows(a); setDocAnalyses(da); setHistory(h); setMoneyIn(b); setMoves(c); setPo(d);
       setHistoryUntil(((hu.data?.value as string) ?? '').trim());
       setLoading(false);
@@ -109,12 +113,17 @@ export default function StatsPage() {
       pay = r.reduce((t, x) => t + Number(x.coach_pay), 0);
       revenue = r.reduce((t, x) => t + revenueOf(x), 0);
     }
+    // Jan's own figures: Elle income and Tyler's commission as entered; salary from the week's row or the latest earlier one
+    const own = owner.find((o) => o.week_start === w);
+    const salaryRow = own ?? [...owner].reverse().find((o) => o.week_start < w);
+    const elle = Number(own?.elle_amount ?? 0), tyler = Number(own?.tyler_commission ?? 0), salary = Number(salaryRow?.salary_cost ?? 0);
     return {
-      week: w, sessions, analyses, history: fromHistory(w),
+      week: w, sessions, analyses, history: fromHistory(w), elle, tyler, salary, entered: !!own,
+      result: revenue - pay + elle + tyler - salary,
       income: moneyIn.filter((m) => m.received_on >= w && m.received_on <= end).reduce((t, m) => t + Number(m.amount), 0),
       pay, revenue, earned: revenue - pay,
     };
-  }), [weekList, rows, history, docAnalyses, moneyIn, historyUntil]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [weekList, rows, history, docAnalyses, moneyIn, historyUntil, owner]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sessionsByCoach = useMemo(() => {
     const m = new Map<string, { n: number; pay: number; revenue: number; noRate: boolean }>();
@@ -140,6 +149,11 @@ export default function StatsPage() {
     income: moneyIn.reduce((t, m) => t + Number(m.amount), 0),
     pay: perWeek.reduce((t, w) => t + w.pay, 0),
     revenue: perWeek.reduce((t, w) => t + w.revenue, 0),
+    elle: perWeek.reduce((t, w) => t + w.elle, 0),
+    tyler: perWeek.reduce((t, w) => t + w.tyler, 0),
+    salary: perWeek.reduce((t, w) => t + w.salary, 0),
+    result: perWeek.reduce((t, w) => t + w.result, 0),
+    missing: perWeek.filter((w) => w.salary > 0 && !w.entered && w.week < thisWeek).length,
   }), [appRows, moneyIn, perWeek]);
 
   const byType = useMemo(() => {
@@ -215,11 +229,17 @@ export default function StatsPage() {
             <div className="tile"><div className="tile-label">Game analyses</div><div className="tile-value">{n1(totals.analyses)}</div></div>
             <div className="tile"><div className="tile-label">Revenue</div><div className="tile-value">{money(totals.revenue)}</div></div>
             <div className="tile"><div className="tile-label">Coach pay</div><div className="tile-value">{money(totals.pay)}</div></div>
-            <div className="tile tile-key"><div className="tile-label">Earned after coach pay</div><div className="tile-value">{money(totals.revenue - totals.pay)}</div></div>
-            <div className="tile"><div className="tile-label">Earned per week, average</div><div className="tile-value">{money((totals.revenue - totals.pay) / nWeeks)}</div></div>
+            <div className="tile"><div className="tile-label">Earned after coach pay</div><div className="tile-value">{money(totals.revenue - totals.pay)}</div></div>
+            <div className="tile"><div className="tile-label">Elle Academy (Jan)</div><div className="tile-value">{money(totals.elle)}</div></div>
+            <div className="tile"><div className="tile-label">Tyler&apos;s Elle commission</div><div className="tile-value">{money(totals.tyler)}</div></div>
+            <div className="tile"><div className="tile-label">Jan&apos;s salary and super</div><div className="tile-value">{money(-totals.salary)}</div></div>
+            <div className="tile tile-key"><div className="tile-label">Business result</div><div className="tile-value">{money(totals.result)}</div></div>
+            <div className="tile"><div className="tile-label">Business result per week</div><div className="tile-value">{money(totals.result / nWeeks)}</div></div>
           </div>
+          <p className="hint">Business result = earned after coach pay + Elle Academy + Tyler&apos;s Elle commission − your salary and super. Salary counts from week 41 at $1,960 a week ($3,500 gross a fortnight plus $420 super); Elle and commission come from &quot;My week&quot; on the Admin page.</p>
+          {totals.missing > 0 && <div className="notice warn">{totals.missing} week{totals.missing === 1 ? '' : 's'} in this period {totals.missing === 1 ? 'has' : 'have'} no Elle figures yet. <Link href="/admin">Fill them in on the Admin page</Link>.</div>}
           {totals.historyWeeks > 0 && <p className="hint">Up to week {isoWeek(historyUntil)}, session counts come from the Abrechnung (the weekly session totals per coach), and game analyses from the Abrechnung or the documentation file, whichever has more. From week {isoWeek(addDays(historyUntil, 7))}, they come from sessions logged in the app. Cancellations only cover sessions logged in the app.</p>}
-          <p className="hint">Revenue assumes every session is charged $120, an assessment $130 and a game analysis $120 (all ex GST); late cancellations and no-shows are charged too. Coach pay: Tyler and Paul $60, David $50, Luca $55 per session, $60 per game analysis. Jani&apos;s sessions have no coach cost.</p>
+          <p className="hint">Revenue assumes every session is charged $120, an assessment $130 and a game analysis $120 (all ex GST); late cancellations and no-shows are charged too. Coach pay: Tyler and Paul $60, David $50, Luca $55 per session, $60 per game analysis. Jani&apos;s sessions have no coach cost; your salary is counted separately above.</p>
 
           <h2>Sessions per week</h2>
           <div className={`bars${nWeeks > 4 ? ' dense' : ''}${nWeeks > 12 ? ' xdense' : ''}`} role="img" aria-label="Sessions delivered per week">
@@ -232,12 +252,14 @@ export default function StatsPage() {
             ))}
           </div>
 
+          <div style={{ overflowX: 'auto' }}>
           <table className="t mt">
-            <thead><tr><th>Week</th><th className="n">Sessions</th><th className="n">Revenue</th><th className="n">Coach pay</th><th className="n">Earned</th></tr></thead>
+            <thead><tr><th>Week</th><th className="n">Sessions</th><th className="n">Revenue</th><th className="n">Coach pay</th><th className="n">Earned</th><th className="n">Elle + Tyler</th><th className="n">Salary</th><th className="n">Result</th></tr></thead>
             <tbody>{[...perWeek].reverse().map((w) => (
-              <tr key={w.week}><td>Week {isoWeek(w.week)}<br /><span className="hint">{fmtDate(w.week)}</span></td><td className="n">{n1(w.sessions)}{w.analyses > 0 && <><br /><span className="hint">+{n1(w.analyses)} {w.analyses === 1 ? "analysis" : "analyses"}</span></>}</td><td className="n">{money(w.revenue)}</td><td className="n">{money(w.pay)}</td><td className="n"><strong>{money(w.earned)}</strong></td></tr>
+              <tr key={w.week}><td>Week {isoWeek(w.week)}<br /><span className="hint">{fmtDate(w.week)}</span></td><td className="n">{n1(w.sessions)}{w.analyses > 0 && <><br /><span className="hint">+{n1(w.analyses)} {w.analyses === 1 ? "analysis" : "analyses"}</span></>}</td><td className="n">{money(w.revenue)}</td><td className="n">{money(w.pay)}</td><td className="n">{money(w.earned)}</td><td className="n">{money(w.elle + w.tyler)}</td><td className="n">{w.salary ? money(-w.salary) : ''}</td><td className="n"><strong>{money(w.result)}</strong></td></tr>
             ))}</tbody>
           </table>
+          </div>
 
           <h2>Sessions by coach</h2>
           {sessionsByCoach.length === 0 ? <p className="empty">No sessions in this period.</p> : (

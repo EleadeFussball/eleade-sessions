@@ -5,7 +5,7 @@
 const TABLES = [
   'players', 'coaches', 'sessions', 'session_players', 'credit_ledger', 'player_balances',
   'payments', 'stripe_payments', 'coach_invoices', 'invoice_lines', 'player_notes',
-  'bookings', 'booking_players', 'session_plans', 'plan_players', 'coach_rates', 'settings',
+  'bookings', 'booking_players', 'session_plans', 'plan_players', 'coach_rates', 'settings', 'owner_weeks',
 ];
 // bank details never go into the backup file
 const DROP = { coach_invoices: ['bsb', 'account_number', 'account_name'] };
@@ -25,7 +25,8 @@ function addSheet(wb, name, rows, cols) {
 
 export async function buildBackupWorkbook(ExcelJS, fetchTable, stamp) {
   const data = {};
-  for (const t of TABLES) data[t] = await fetchTable(t);
+  // owner_weeks is optional so the backup still runs if that table is missing
+  for (const t of TABLES) data[t] = t === 'owner_weeks' ? await fetchTable(t).catch(() => []) : await fetchTable(t);
   const pName = new Map(data.players.map((p) => [p.id, p.name]));
   const cName = new Map(data.coaches.map((c) => [c.id, c.name]));
   const byId = (rows) => new Map(rows.map((r) => [r.id, r]));
@@ -85,5 +86,6 @@ export async function buildBackupWorkbook(ExcelJS, fetchTable, stamp) {
   addSheet(wb, 'Coaches', data.coaches.map((c) => ({ ...c })), ['name', 'email', 'is_admin', 'active', 'salaried', 'paid_separately']);
   addSheet(wb, 'Coach rates', data.coach_rates.map((r) => ({ ...r, coach: cName.get(r.coach_id) ?? '' })), ['coach', 'one_to_one', 'two_to_one', 'four_to_one', 'analysis', 'testing', 'assessment']);
   addSheet(wb, 'Settings', data.settings, ['key', 'value']);
+  if (data.owner_weeks?.length) addSheet(wb, 'Jan weekly figures', data.owner_weeks);
   return wb;
 }

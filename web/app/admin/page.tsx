@@ -9,6 +9,7 @@ import { invoiceNo, type CoachInvoice, type PlayerBalance } from '@/lib/types';
 import { buildAba, type AbaPayer } from '@/lib/bank';
 import { StripeInbox } from '@/components/StripeInbox';
 import { BackupDownload } from '@/components/BackupDownload';
+import { OwnerWeek } from '@/components/OwnerWeek';
 
 type Expiring = { player_id: string; name: string; family: string | null; package_name: string | null; expires_on: string; days_left: number; sessions_left: number | null; analyses_left: number | null };
 type Missing = { player_id: string; name: string; main_coach_id: string | null; last_logged: string | null };
@@ -112,6 +113,8 @@ export default function AdminPage() {
       <h1>Admin</h1>
       <p className="muted">Last week: {fmtWeek(lastWeek)}</p>
       {err && <div className="notice err">{err}</div>}
+      <OwnerWeek />
+
       {unconfirmed > 0 && <div className="notice warn">{unconfirmed} package players still have an unconfirmed starting balance. Confirm them on each player page.</div>}
 
       <h2>Coach invoices to pay ({toPay.length})</h2>

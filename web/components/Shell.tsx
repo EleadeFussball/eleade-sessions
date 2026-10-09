@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
-import { todayISO, fromISO } from '@/lib/dates';
+import { addDays, todayISO, fromISO, weekStart } from '@/lib/dates';
 
 const TABS = [
   { href: '/log', label: 'Log', admin: false },
@@ -25,6 +25,19 @@ export function Shell({ children }: { children: ReactNode }) {
   const [newEnquiries, setNewEnquiries] = useState(0);
   const [invoicesWaiting, setInvoicesWaiting] = useState(0);
   const [invoiceDue, setInvoiceDue] = useState(0);
+  const [ownerDue, setOwnerDue] = useState(false);
+
+  // Reminder for Jan: from Sunday 5pm until Monday night, if this week's salary and Elle figures are not saved yet.
+  useEffect(() => {
+    if (!isAdmin) return;
+    const hour = Number(new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
+    const dow = fromISO(todayISO()).getDay();
+    if (!((dow === 0 && hour >= 17) || dow === 1)) { setOwnerDue(false); return; }
+    const week = weekStart(dow === 1 ? addDays(todayISO(), -1) : todayISO());
+    let alive = true;
+    supabase.from('owner_weeks').select('week_start').eq('week_start', week).maybeSingle().then(({ data }) => { if (alive) setOwnerDue(!data); });
+    return () => { alive = false; };
+  }, [isAdmin, path]);
 
   // Reminder for coaches: from Sunday 5pm (Sydney) until the invoice is sent, if there is anything to invoice.
   useEffect(() => {
@@ -88,6 +101,11 @@ export function Shell({ children }: { children: ReactNode }) {
         {!session.user.user_metadata?.password_set && path !== '/account' && (
           <div className="notice warn">
             Set a password so you can sign in without waiting for an email. <Link href="/account">Set password</Link>
+          </div>
+        )}
+        {ownerDue && path !== '/admin' && (
+          <div className="notice warn">
+            Time to fill in your week: Elle hours and Tyler&apos;s Elle sessions. <Link href="/admin">Open Admin</Link>
           </div>
         )}
         {invoiceDue > 0 && path !== '/week' && (

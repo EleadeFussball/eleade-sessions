@@ -952,6 +952,23 @@ do $$ begin
   end;
 end $$;
 
+-- ---------- Jan's own weekly figures are private ----------
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select pg_temp.check('a coach cannot see Jan''s salary and Elle figures', (select count(*) = 0 from public.owner_weeks));
+do $$ begin
+  begin
+    insert into public.owner_weeks (week_start, salary_cost) values ('2026-10-12', 1);
+    perform pg_temp.check('a coach cannot write Jan''s weekly figures', false);
+  exception when others then perform pg_temp.check('a coach cannot write Jan''s weekly figures', true);
+  end;
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+insert into public.owner_weeks (week_start, salary_cost, elle_hours, elle_amount, tyler_elle_sessions, tyler_commission)
+values ('2026-10-12', 1960, 7.5, 525, 3, 60);
+select pg_temp.check('Jan can save his weekly figures and sees the KW41 salary',
+  (select count(*) = 2 and sum(salary_cost) = 3920 from public.owner_weeks));
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;
