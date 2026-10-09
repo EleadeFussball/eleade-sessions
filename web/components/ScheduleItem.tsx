@@ -8,12 +8,13 @@ import { normaliseTime } from '@/lib/time';
 import { FORMAT_LABEL, OUTCOME_LABEL, type Outcome } from '@/lib/types';
 import { cancelEntry, canComplete, completeFrom, confirmEntry, hhmm, moveEntry, timeRange, type ScheduleEntry } from '@/lib/schedule';
 import { StripeNote } from '@/components/StripeNote';
+import { EditSession, canEditSession } from '@/components/EditSession';
 
 /** One planned session, with the actions a coach needs: done, cancelled, moved, removed. */
 export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, startMode = '' }:
   { o: ScheduleEntry; onDone: () => void; showDay?: boolean; showCoach?: boolean; startMode?: '' | 'done' }) {
   const { coach, coaches, isAdmin } = useAuth();
-  const [mode, setMode] = useState<'' | 'done' | 'cancel' | 'move'>(startMode);
+  const [mode, setMode] = useState<'' | 'done' | 'cancel' | 'move' | 'edit'>(startMode);
   const [topic, setTopic] = useState('');
   const [obs, setObs] = useState('');
   const [improve, setImprove] = useState('');
@@ -69,10 +70,13 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
       </div>
       {o.note && <div className="sub">{o.note}</div>}
 
-      {o.kind === 'logged' && mode === '' && mine && (
+      {o.session_id && mode === '' && canEditSession(o, isAdmin, coach?.id) && (
         <div className="row mt">
-          <button type="button" className="btn small ghost" onClick={() => setMode('move')}>Change time</button>
+          <button type="button" className="btn small ghost" onClick={() => setMode('edit')}>Edit session</button>
         </div>
+      )}
+      {mode === 'edit' && o.session_id && (
+        <EditSession sessionId={o.session_id} onCancel={() => setMode('')} onDone={() => { setMode(''); onDone(); }} />
       )}
       {o.kind !== 'logged' && !o.session_id && mode === '' && mine && (
         <div className="row mt" style={{ flexWrap: 'wrap' }}>

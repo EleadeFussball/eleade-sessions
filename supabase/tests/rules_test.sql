@@ -924,6 +924,34 @@ select public.record_stripe_payment_named('cs_name_3', null, 132, 'aud', 'p@test
 select pg_temp.check('an unknown name is left for Jan to assign',
   (select player_id is null from public.stripe_payments where stripe_session_id = 'cs_name_3'));
 
+-- ---------- editing a completed session ----------
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.log_session(public.today_sydney(), '00000000-0000-0000-0000-0000000000c2', '2:1', 'attended',
+  array['00000000-0000-0000-0000-0000000000b1','00000000-0000-0000-0000-0000000000b5']::uuid[]) as ed1 \gset
+select sessions_left as ray_before from public.player_balances where player_id = '00000000-0000-0000-0000-0000000000b5' \gset
+select public.edit_session(:'ed1', public.today_sydney(), '17:00', 90, '1:1', 'attended', ' Moore Park ',
+  array['00000000-0000-0000-0000-0000000000b1']::uuid[], 'Finishing', null, null, null);
+select pg_temp.check('a coach can turn their 2:1 into a 1:1 with one player',
+  (select format = '1:1' and minutes = 90 and start_time = '17:00' and location = 'Moore Park' and topic = 'Finishing' from public.sessions where id = :'ed1')
+  and (select count(*) = 1 from public.session_players where session_id = :'ed1'));
+select pg_temp.check('the removed player gets the credit back',
+  (select sessions_left = :ray_before + 1 from public.player_balances where player_id = '00000000-0000-0000-0000-0000000000b5'));
+do $$ begin
+  begin
+    perform public.edit_session((select id from public.sessions where format = '1:1' and coach_id = '00000000-0000-0000-0000-0000000000c1' and not imported limit 1),
+      public.today_sydney(), null, 60, '1:1', 'attended', null, array['00000000-0000-0000-0000-0000000000b1']::uuid[]);
+    perform pg_temp.check('a coach cannot edit another coach''s session', false);
+  exception when others then perform pg_temp.check('a coach cannot edit another coach''s session', sqlerrm like '%your own%');
+  end;
+  begin
+    perform public.edit_session((select id from public.sessions where topic = 'Finishing' and coach_id = '00000000-0000-0000-0000-0000000000c2' limit 1), public.today_sydney(), null, 60, '2:1', 'attended', null,
+      array['00000000-0000-0000-0000-0000000000b1']::uuid[]);
+    perform pg_temp.check('a 2:1 needs two players', false);
+  exception when others then perform pg_temp.check('a 2:1 needs two players', sqlerrm like '%at least 2%', sqlerrm);
+  end;
+end $$;
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;
