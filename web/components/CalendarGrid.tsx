@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { fmtDate, todayISO } from '@/lib/dates';
 import { FORMAT_LABEL } from '@/lib/types';
-import { canComplete, entryKey, hhmm, minutesOf, timeOf, type ScheduleEntry } from '@/lib/schedule';
+import { canComplete, coachColour, entryKey, hhmm, minutesOf, timeOf, type ScheduleEntry } from '@/lib/schedule';
 
 const SNAP = 15;            // sessions start on a quarter hour
 const HOLD_MS = 350;        // hold this long on a touch screen to pick a session up
@@ -50,6 +50,8 @@ function layout(list: ScheduleEntry[]) {
 
 export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry, onMove, onComplete }: Props) {
   const { coach, coaches, isAdmin } = useAuth();
+  const cc = (id: string) => ({ ['--cc' as string]: coachColour(coaches.find((c) => c.id === id)?.name) }) as React.CSSProperties;
+  const shownCoaches = coaches.filter((c) => entries.some((o) => o.coach_id === c.id));
   const bodyRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ key: string; day: string; mins: number } | null>(null);
   const dragRef = useRef<{ key: string; day: string; mins: number } | null>(null);
@@ -112,6 +114,12 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
 
   return (
     <div className="grid-wrap">
+      {shownCoaches.length > 1 && (
+        <div className="cal-legend">
+          {shownCoaches.map((c) => <span key={c.id}><i style={{ background: coachColour(c.name) }} />{c.name}</span>)}
+          <span className="cal-legend-done">✓ = logged</span>
+        </div>
+      )}
       <div className="grid-head" style={{ gridTemplateColumns: `44px repeat(${days.length}, 1fr)` }}>
         <div />
         {days.map((d) => (
@@ -128,7 +136,7 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
           {days.map((d) => (
             <div key={d} className="ad-col">
               {untimed.filter((o) => o.session_date === d).map((o) => (
-                <button key={entryKey(o)} type="button" className={`ev ev-${o.kind} flat${selected === entryKey(o) ? ' on' : ''}`}
+                <button key={entryKey(o)} type="button" style={cc(o.coach_id)} className={`ev ev-${o.kind} flat${o.session_id ? ' done' : ''}${selected === entryKey(o) ? ' on' : ''}`}
                         onClick={() => onPickEntry(o)} title={`${o.players} · ${FORMAT_LABEL[o.format]}`}>
                   {o.players}
                 </button>
@@ -166,6 +174,7 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
                     key={key} type="button" data-ev={key}
                     className={`ev ev-${o.kind}${done ? ' done' : ''}${selected === key ? ' on' : ''}${dragging ? ' dragging' : ''}${armed === key ? ' armed' : ''}`}
                     style={{
+                      ...cc(o.coach_id),
                       top: ((startM - from) / 60) * HOUR + 1,
                       height: Math.max(22, (o.minutes / 60) * HOUR - 2),
                       left: `calc(${(col / cols) * 100}% + 2px)`,
@@ -228,7 +237,7 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
                       window.addEventListener('pointercancel', onUp);
                     }}
                   >
-                    <span className="ev-time">{dragging ? timeOf(drag!.mins) : hhmm(o.start_time)}</span>
+                    <span className="ev-time">{done && '✓ '}{dragging ? timeOf(drag!.mins) : hhmm(o.start_time)}</span>
                     <span className="ev-name">{o.players}</span>
                     {completable && onComplete ? (
                       <span role="button" tabIndex={0} className={o.minutes < 60 ? 'ev-done corner' : 'ev-done'}

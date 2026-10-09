@@ -273,9 +273,12 @@ details.panel[open] > summary { border-bottom: 1px solid var(--line); margin-bot
 .grid-allday { display: grid; border-top: 1px solid var(--line); padding: 4px 0; }
 .ad-col { border-left: 1px solid var(--line); padding: 0 2px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .gt-label { font-size: .68rem; color: var(--muted); text-align: right; padding-right: 6px; }
-.ev-regular { border-left-color: var(--brand-red); }
-.ev-logged { border-left-color: var(--brand-gold); }
-.ev.done { background: var(--ok-soft); border-left-color: var(--ok); }
+.ev { --cc: var(--ink); border-left: 5px solid var(--cc); background: color-mix(in srgb, var(--cc) 10%, #fff); }
+.ev.done { background: color-mix(in srgb, var(--cc) 24%, #fff); }
+.cal-legend { padding: 0 4px; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: .78rem; margin: 0 0 8px; }
+.cal-legend span { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+.cal-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.cal-legend .cal-legend-done { font-weight: 400; color: var(--muted); }
 .ev.on { outline: 2px solid var(--ink); outline-offset: -1px; }
 .ev.dragging { opacity: .85; box-shadow: 0 3px 10px rgba(0,0,0,.2); z-index: 4; }
 .ev-time { font-weight: 700; font-variant-numeric: tabular-nums; }

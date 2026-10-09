@@ -106,3 +106,9 @@ export async function lastLocation(playerId: string): Promise<string> {
   const { data } = await supabase.rpc('last_location', { p_player_id: playerId });
   return typeof data === 'string' ? data : '';
 }
+
+// Fixed calendar colour per coach (by first name), so "All coaches" is easy to read.
+export const COACH_COLOURS: Record<string, string> = { paul: '#D62828', tyler: '#1F6FD1', david: '#2E9D4A', jani: '#111111' };
+export function coachColour(name?: string | null) {
+  return COACH_COLOURS[(name ?? '').trim().split(/\s+/)[0].toLowerCase()] ?? '#8A8A8A';
+}

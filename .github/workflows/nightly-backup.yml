@@ -1,4 +1,4 @@
-name: Nightly backup to Google Drive
+name: Nightly backup
 on:
   schedule:
     - cron: '30 15 * * *'   # 02:30 Sydney (AEDT) / 01:30 (AEST)
@@ -16,10 +16,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
-          BACKUP_SECRET: ${{ secrets.BACKUP_SECRET }}
       - uses: actions/upload-artifact@v4
         with:
-          name: eleade-backup-${{ github.run_id }}
+          name: eleade-backup-${{ github.run_number }}
           path: eleade-backup.xlsx
           retention-days: 90
