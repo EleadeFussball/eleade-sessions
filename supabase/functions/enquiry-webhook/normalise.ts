@@ -19,9 +19,9 @@ const RULES: [keyof Fields, string[]][] = [
   ['gender', ['gender', 'sex']],
   ['age_group', ['agegroup', 'playerage', 'age']],
   ['position', ['position']],
-  ['foot', ['foot', 'footed']],
+  ['foot', ['dominantfoot', 'strongfoot', 'preferredfoot', 'betterfoot', 'footed', 'foot']],
   ['club', ['currentclub', 'academy', 'club']],
-  ['heard_from', ['hear', 'referral', 'foundus']],
+  ['heard_from', ['hear', 'referral', 'referred', 'seenon', 'foundus']],
   ['player_type', ['playertype', 'newplayer', 'returningplayer', 'newor']],
   ['message', ['message', 'comment', 'notes', 'note', 'question', 'anythingelse', 'tellus', 'goal']],
 ];
@@ -34,6 +34,7 @@ function matches(key: string, alias: string): boolean {
   // "parent+phone" means both words must appear in the label
   if (alias.includes('+')) return alias.split('+').every((part) => key.includes(part));
   // very short words must be the whole label ("age" must not match "message")
+  if (alias === 'foot') return key === 'foot';  // not "football"
   return alias.length < 4 ? key === alias : key.includes(alias);
 }
 
@@ -85,7 +86,11 @@ export function normalise(payload: unknown): { fields: Fields; externalId: strin
   for (const [label, value] of pairs) {
     const key = squash(label);
     if (!externalId && ['submissionid', 'entryid', 'formsubmissionid', 'submissionid'].includes(key)) externalId = value;
-    if (FULL_NAME.includes(key) && !fullName) { fullName = value; continue; }
+    // "Full name", "Player name", but also longer labels like "full_name_player" (not the parent's name)
+    const isFullName = FULL_NAME.includes(key)
+      || (!key.includes('parent') && !key.includes('guardian') && !key.includes('teammate')
+          && (key.includes('fullname') || (key.includes('player') && key.includes('name') && !key.includes('first') && !key.includes('last') && !key.includes('sur'))));
+    if (isFullName && !fullName) { fullName = value; continue; }
     for (const [field, aliases] of RULES) {
       if (fields[field] === undefined && aliases.some((a) => matches(key, a))) {
         fields[field] = value.trim();
