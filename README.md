@@ -84,3 +84,8 @@ Parent portal, Stripe purchases, automatic renewal emails, package expiry remind
 
 Nightly (02:30 Sydney) GitHub Actions job `.github/workflows/nightly-backup.yml` runs `scripts/backup/run.mjs`: it reads all tables with the Supabase service key and builds an Excel workbook (`web/lib/backup-workbook.mjs`, shared with the Admin "Download everything" button). Each night's workbook is kept as a GitHub Actions artifact for 90 days (Actions tab > run > Artifacts).
 Secrets needed in the GitHub repo: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`.
+
+## Database updates
+
+Every push to main that changes `supabase/migrations/` runs `.github/workflows/db-migrate.yml`: the rules tests run on a scratch Postgres first, and only if all pass, `scripts/db/migrate.sh` applies the new migration files to the live database (each once, recorded in `public.app_migrations`).
+Secret needed: `SUPABASE_DB_URL` (Supabase > Connect > Session pooler connection string, with the database password).
