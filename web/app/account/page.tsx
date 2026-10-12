@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { digits, validAbn } from '@/lib/bank';
+import { CalendarLink } from '@/components/CalendarLink';
 
 export default function AccountPage() {
   const { session, coach } = useAuth();
@@ -35,6 +36,8 @@ export default function AccountPage() {
     <>
       <h1>Account</h1>
       <p className="muted">{coach?.name}, signed in as {session?.user.email}</p>
+
+      {coach && (<><h2>Phone calendar</h2><CalendarLink /></>)}
 
       <h2>{hasPassword ? 'Change password' : 'Set your password'}</h2>
       {!hasPassword && <p>Set a password once, and you can sign in on any phone without waiting for an email.</p>}

@@ -1,142 +1,48 @@
--- Jan's own weekly figures (admin only): salary cost, Elle Academy income and Tyler's Elle commission.
--- The stats page uses them to show what the business generates overall.
+-- A private calendar link per coach (iPhone / Google Calendar subscription). The token in the link is the only key.
 
-create table if not exists public.owner_weeks (
-  week_start date primary key check (extract(isodow from week_start) = 1),
-  salary_cost numeric(10,2) not null default 0,       -- Jan's gross salary + super for this week
-  elle_hours numeric(5,2) not null default 0,
-  elle_rate numeric(8,2) not null default 70,
-  elle_amount numeric(10,2) not null default 0,       -- paid by Elle Academy to Eleade
-  tyler_elle_sessions integer not null default 0,
-  tyler_commission_rate numeric(8,2) not null default 20,
-  tyler_commission numeric(10,2) not null default 0,
-  note text,
-  updated_at timestamptz not null default now()
+create table if not exists public.calendar_feeds (
+  coach_id uuid primary key references public.coaches(id) on delete cascade,
+  token text not null unique default replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''),
+  created_at timestamptz not null default now()
 );
-alter table public.owner_weeks enable row level security;
-drop policy if exists owner_weeks_admin on public.owner_weeks;
-create policy owner_weeks_admin on public.owner_weeks for all to authenticated
-  using (public.is_admin()) with check (public.is_admin());
-grant select, insert, update, delete on public.owner_weeks to authenticated;
-grant select on public.owner_weeks to service_role;
+alter table public.calendar_feeds enable row level security;
+drop policy if exists calendar_feeds_own on public.calendar_feeds;
+create policy calendar_feeds_own on public.calendar_feeds for select to authenticated
+  using (public.is_admin() or coach_id = public.current_coach_id());
+grant select on public.calendar_feeds to authenticated;
 
--- Fortnightly $3,500 gross + $420 super = $1,960 a week, from KW41 2026 (week starting 5 Oct 2026).
--- A week without its own row uses the salary of the latest earlier row. Kept here, not in settings, so only Jan can see it.
--- KW40 and KW41 were school holidays: no Elle income. Salary starts in KW41.
-insert into public.owner_weeks (week_start, salary_cost, elle_hours, elle_amount, note)
-values ('2026-09-28', 0, 0, 0, 'School holidays'), ('2026-10-05', 1960, 0, 0, 'School holidays')
-on conflict (week_start) do nothing;
--- Coaches can correct a sent invoice until Sunday 8pm (Sydney) of the invoice's week, as long as Jan has not paid it.
--- "Update invoice" rebuilds the lines from the logged sessions, keeping the invoice number. Jan can update any unpaid invoice.
+-- The signed-in coach's link token, created on first use. p_reset makes a new one (the old link stops working).
+create or replace function public.my_calendar_token(p_reset boolean default false)
+returns text
+language plpgsql security definer set search_path = public as $$
+declare v_coach uuid := public.current_coach_id(); v_token text;
+begin
+  if v_coach is null then raise exception 'Only coaches have a calendar link'; end if;
+  if p_reset then delete from public.calendar_feeds where coach_id = v_coach; end if;
+  insert into public.calendar_feeds (coach_id) values (v_coach) on conflict (coach_id) do nothing;
+  select token into v_token from public.calendar_feeds where coach_id = v_coach;
+  return v_token;
+end $$;
+revoke all on function public.my_calendar_token(boolean) from public, anon;
+grant execute on function public.my_calendar_token(boolean) to authenticated;
 
-create or replace function public.invoice_edit_until(p_period_end date)
-returns timestamp language sql immutable as $$
-  select (p_period_end + (7 - extract(isodow from p_period_end)::int)) + time '20:00'
+-- What the calendar link shows: the coach's sessions from 4 weeks back to 12 weeks ahead, with plans.
+create or replace function public.calendar_feed(p_token text)
+returns table(coach_name text, kind text, ref_id uuid, plan_date date, session_date date, start_time time, minutes integer,
+              format text, location text, note text, players text, done boolean, outcome text, prep text)
+language sql stable security definer set search_path = public as $$
+  with f as (select c.id, c.name from public.calendar_feeds cf join public.coaches c on c.id = cf.coach_id
+              where cf.token = p_token and length(p_token) >= 32)
+  select f.name, e.kind, e.ref_id, e.plan_date, e.session_date, e.start_time, e.minutes,
+         e.format, e.location, e.note, e.players, e.session_id is not null, e.outcome,
+         case when e.session_id is not null then null
+              when e.kind = 'once' then (select sp.topic from public.session_prep sp where sp.booking_id = e.ref_id)
+              when e.kind = 'regular' then (select sp.topic from public.session_prep sp where sp.plan_id = e.ref_id and sp.plan_date = e.plan_date)
+         end
+    from f
+    cross join lateral public.calendar(public.today_sydney() - 28, public.today_sydney() + 84) e
+   where e.coach_id = f.id
+     and coalesce(e.outcome, '') <> 'cancelled_in_time'
 $$;
-grant execute on function public.invoice_edit_until(date) to authenticated;
-
-create or replace function public.update_invoice(p_invoice_id uuid)
-returns uuid
-language plpgsql security definer set search_path = public as $$
-declare
-  v_inv public.coach_invoices%rowtype;
-  v_until date;
-  v_total numeric;
-  v_n int;
-begin
-  select * into v_inv from public.coach_invoices where id = p_invoice_id for update;
-  if not found then raise exception 'Invoice not found'; end if;
-  if not (public.is_admin() or v_inv.coach_id = public.current_coach_id()) then
-    raise exception 'You can only change your own invoice';
-  end if;
-  if v_inv.status = 'paid' then
-    raise exception 'This invoice is already paid, so it can no longer be changed. Anything missing goes on your next invoice';
-  end if;
-  if not public.is_admin() and public.sydney_now() >= public.invoice_edit_until(v_inv.period_end) then
-    raise exception 'An invoice can be changed until Sunday 8pm of its week. Anything missing goes on your next invoice';
-  end if;
-
-  v_until := least(public.today_sydney(), v_inv.period_end + (7 - extract(isodow from v_inv.period_end)::int));
-  delete from public.invoice_lines where invoice_id = p_invoice_id;
-
-  if exists (select 1 from public.invoice_draft(v_inv.coach_id, v_until) d where d.no_rate) then
-    raise exception 'Some session types have no pay rate yet. Ask Jan to set it on the Team page';
-  end if;
-  select count(*), coalesce(sum(d.amount), 0) into v_n, v_total from public.invoice_draft(v_inv.coach_id, v_until) d;
-  if v_n = 0 or v_total <= 0 then
-    -- nothing left to pay: the invoice is withdrawn
-    delete from public.coach_invoices where id = p_invoice_id;
-    return null;
-  end if;
-
-  update public.coach_invoices
-     set total = v_total,
-         period_start = v_until - (extract(isodow from v_until)::int - 1),
-         period_end = v_until,
-         issued_on = public.today_sydney(),
-         submitted_at = now(),
-         submitted_by = auth.uid()
-   where id = p_invoice_id;
-  insert into public.invoice_lines (invoice_id, session_id, line_date, description, amount, is_correction)
-  select p_invoice_id, d.session_id, d.line_date, d.description, d.amount, d.is_correction
-    from public.invoice_draft(v_inv.coach_id, v_until) d;
-  return p_invoice_id;
-end $$;
-revoke all on function public.update_invoice(uuid) from public, anon;
-grant execute on function public.update_invoice(uuid) to authenticated;
--- Coaches can plan a session before it happens. The plan becomes "What you worked on" when the session is confirmed.
-
-create table if not exists public.session_prep (
-  id uuid primary key default gen_random_uuid(),
-  booking_id uuid references public.bookings(id) on delete cascade,
-  plan_id uuid references public.session_plans(id) on delete cascade,
-  plan_date date,
-  topic text not null,
-  updated_by uuid,
-  updated_at timestamptz not null default now(),
-  check ((booking_id is not null and plan_id is null and plan_date is null)
-      or (booking_id is null and plan_id is not null and plan_date is not null))
-);
-create unique index if not exists session_prep_booking on public.session_prep (booking_id) where booking_id is not null;
-create unique index if not exists session_prep_plan on public.session_prep (plan_id, plan_date) where plan_id is not null;
-alter table public.session_prep enable row level security;
-drop policy if exists session_prep_read on public.session_prep;
-create policy session_prep_read on public.session_prep for select to authenticated using (public.is_coach());
-grant select on public.session_prep to authenticated;
-grant select on public.session_prep to service_role;
-
--- Save (or clear, with an empty text) the plan for a planned session. Only its coach or Jan.
-create or replace function public.save_prep(p_kind text, p_ref_id uuid, p_plan_date date, p_topic text)
-returns void
-language plpgsql security definer set search_path = public as $$
-declare
-  v_coach uuid;
-  v_topic text := nullif(trim(p_topic), '');
-begin
-  if p_kind = 'once' then
-    select coach_id into v_coach from public.bookings where id = p_ref_id;
-  elsif p_kind = 'regular' then
-    select coach_id into v_coach from public.session_plans where id = p_ref_id;
-    if p_plan_date is null then raise exception 'Missing date'; end if;
-  else
-    raise exception 'Only planned sessions can have a plan';
-  end if;
-  if v_coach is null then raise exception 'Session not found'; end if;
-  if not (public.is_admin() or v_coach = public.current_coach_id()) then
-    raise exception 'You can only plan your own sessions';
-  end if;
-
-  if p_kind = 'once' then
-    delete from public.session_prep where booking_id = p_ref_id;
-    if v_topic is not null then
-      insert into public.session_prep (booking_id, topic, updated_by) values (p_ref_id, v_topic, auth.uid());
-    end if;
-  else
-    delete from public.session_prep where plan_id = p_ref_id and plan_date = p_plan_date;
-    if v_topic is not null then
-      insert into public.session_prep (plan_id, plan_date, topic, updated_by) values (p_ref_id, p_plan_date, v_topic, auth.uid());
-    end if;
-  end if;
-end $$;
-revoke all on function public.save_prep(text, uuid, date, text) from public, anon;
-grant execute on function public.save_prep(text, uuid, date, text) to authenticated;
+revoke all on function public.calendar_feed(text) from public;
+grant execute on function public.calendar_feed(text) to anon, authenticated;

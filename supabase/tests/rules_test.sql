@@ -965,6 +965,28 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
 select public.save_prep('once', :'prep_bk', null, '');
 select pg_temp.check('an empty plan clears it', not exists (select 1 from public.session_prep where booking_id = :'prep_bk'));
 
+
+-- ---------- private calendar link ----------
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.my_calendar_token() as tok1 \gset
+select pg_temp.check('a coach gets a long private calendar token, the same each time',
+  length(:'tok1') = 64 and public.my_calendar_token() = :'tok1');
+set role anon;
+select (select count(*) > 0 and bool_and(coach_name = 'Tyler') from public.calendar_feed(:'tok1')) as feed_ok,
+       (select count(*) = 0 from public.calendar_feed('nope')) as wrong_ok \gset
+reset role;
+select pg_temp.check('the token table cannot be read without signing in', not has_table_privilege('anon', 'public.calendar_feeds', 'select'));
+select pg_temp.check('the calendar link shows only that coach''s sessions', :'feed_ok'::boolean);
+select pg_temp.check('a wrong token shows nothing', :'wrong_ok'::boolean);
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.my_calendar_token(true) as tok2 \gset
+set role anon;
+select (select count(*) = 0 from public.calendar_feed(:'tok1')) as reset_ok \gset
+reset role;
+select pg_temp.check('resetting the link stops the old one', :'reset_ok'::boolean and :'tok1' <> :'tok2');
+
 -- ---------- Player Name on the payment link ----------
 reset role;
 insert into public.players (id, name) values ('00000000-0000-0000-0000-0000000e00a1', 'Named Nina');

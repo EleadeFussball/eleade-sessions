@@ -8,6 +8,7 @@ import { FORMAT_LABEL } from '@/lib/types';
 import { ScheduleItem } from '@/components/ScheduleItem';
 import { Sheet } from '@/components/Sheet';
 import { CalendarView } from '@/components/CalendarView';
+import { CalendarLink } from '@/components/CalendarLink';
 
 /** Your week: today and tomorrow, sessions still to confirm, the calendar, and logging a session. */
 export default function YourWeek() {
@@ -16,6 +17,7 @@ export default function YourWeek() {
   const [loaded, setLoaded] = useState(false);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [calKey, setCalKey] = useState(0);
+  const [showLink, setShowLink] = useState(false);
   const today = todayISO();
   const tomorrow = addDays(today, 1);
 
@@ -72,6 +74,13 @@ export default function YourWeek() {
 
       <h2>Calendar</h2>
       <CalendarView reloadKey={calKey} onChanged={load} />
+      {coach && (
+        <div className="mt">
+          {!showLink
+            ? <button type="button" className="linkbtn" onClick={() => setShowLink(true)}>Show my sessions in my phone calendar</button>
+            : <CalendarLink />}
+        </div>
+      )}
 
       <h2 className="mt">Log a session</h2>
       <p className="hint">For a session that is not in the calendar, for example one arranged at short notice.</p>
