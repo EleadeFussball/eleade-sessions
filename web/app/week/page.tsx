@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { addDays, fmtDate, fmtWeek, money, todayISO, weekStart, isoWeek } from '@/lib/dates';
+import { editDeadline, invoiceEditable, updateInvoice } from '@/lib/invoices';
 import { FORMAT_LABEL, OUTCOME_LABEL, invoiceNo, type CoachInvoice, type Format, type InvoiceLine, type Outcome } from '@/lib/types';
 
 type PayRow = { session_id: string; session_date: string; coach_id: string; coach_name: string;
@@ -97,6 +98,16 @@ export default function WeekPage() {
   const draftTotal = draft.reduce((t, l) => t + Number(l.amount), 0);
   const draftNoRate = draft.some((l) => l.no_rate);
   const thisWeeks = invoices.filter((i) => i.period_end >= start && i.period_end <= weekEnd);
+  const openInvoice = thisWeeks.find((i) => invoiceEditable(i, isAdmin));
+  const mayAct = coachId === coach?.id || isAdmin;
+
+  async function update(id: string) {
+    setBusy(true); setErr('');
+    const { id: kept, error } = await updateInvoice(id);
+    setBusy(false); setReview(false); setTicked(false);
+    if (error) { setErr(errorText(error)); return; }
+    if (kept) router.push(`/invoices/${kept}`); else loadInvoices();
+  }
 
   async function submit() {
     setBusy(true); setErr('');
@@ -167,9 +178,17 @@ export default function WeekPage() {
         <>
           <h2>Invoice</h2>
           {thisWeeks.map((i) => (
-            <p key={i.id}><Link href={`/invoices/${i.id}`}>Invoice {invoiceNo(i)}</Link>, {money(i.total)}{' '}
-              <span className={i.status === 'paid' ? 'tag turf' : 'tag amber'}>{i.status === 'paid' ? 'Paid' : 'Submitted'}</span></p>
+            <div key={i.id}>
+              <p><Link href={`/invoices/${i.id}`}>Invoice {invoiceNo(i)}</Link>, {money(i.total)}{' '}
+                <span className={i.status === 'paid' ? 'tag turf' : 'tag amber'}>{i.status === 'paid' ? `Paid ${fmtDate(i.paid_at?.slice(0, 10) ?? null)}` : 'Open'}</span></p>
+              {mayAct && invoiceEditable(i, isAdmin) && (
+                <p className="hint">Made a mistake? Fix the session above (tap it and choose Edit), then tap Update invoice. You can change this invoice until Sunday {fmtDate(editDeadline(i))}, 8pm, unless Jan has already paid it.</p>
+              )}
+            </div>
           ))}
+          {mayAct && openInvoice && draft.length === 0 && (
+            <button className="btn small ghost" type="button" disabled={busy} onClick={() => update(openInvoice.id)}>{busy ? 'Updating' : `Update invoice ${invoiceNo(openInvoice)}`}</button>
+          )}
           {draft.length === 0 ? (
             thisWeeks.length === 0 && <p className="empty">Nothing to invoice for this week.</p>
           ) : (
@@ -189,7 +208,9 @@ export default function WeekPage() {
               ) : draftTotal <= 0 ? (
                 <p className="hint">{draftTotal < 0 ? 'You kept more cash than you earned, so the invoice total is below zero. It is not sent now. The difference carries into your next invoice automatically.' : 'Nothing to pay for this week.'}</p>
               ) : (
-                !review ? (
+                openInvoice ? (
+                  <button className="btn block" type="button" disabled={busy} onClick={() => update(openInvoice.id)}>{busy ? 'Updating' : `Add these to invoice ${invoiceNo(openInvoice)}`}</button>
+                ) : !review ? (
                   <button className="btn block" type="button" onClick={() => setReview(true)}>All sessions logged? Send invoice</button>
                 ) : (
                   <div className="panel-form">
@@ -216,13 +237,14 @@ export default function WeekPage() {
 
           {invoices.length > 0 && (
             <>
-              <h3 className="mt">Past invoices</h3>
+              <h3 className="mt">My invoices</h3>
+              <p className="hint">Open means sent and waiting for Jan. Paid shows the day Jan paid it.</p>
               <table className="t">
                 <tbody>{invoices.map((i) => (
                   <tr key={i.id}>
                     <td><Link href={`/invoices/${i.id}`}>{invoiceNo(i)}</Link><br /><span className="hint">Week {isoWeek(i.period_start)}, to {fmtDate(i.period_end)}</span></td>
                     <td className="n">{money(i.total)}</td>
-                    <td className="n"><span className={i.status === 'paid' ? 'tag turf' : 'tag amber'}>{i.status === 'paid' ? 'Paid' : 'Submitted'}</span></td>
+                    <td className="n"><span className={i.status === 'paid' ? 'tag turf' : 'tag amber'}>{i.status === 'paid' ? `Paid ${fmtDate(i.paid_at?.slice(0, 10) ?? null)}` : 'Open'}</span></td>
                   </tr>
                 ))}</tbody>
               </table>

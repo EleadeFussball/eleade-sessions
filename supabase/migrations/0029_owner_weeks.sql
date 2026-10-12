@@ -22,6 +22,7 @@ grant select on public.owner_weeks to service_role;
 
 -- Fortnightly $3,500 gross + $420 super = $1,960 a week, from KW41 2026 (week starting 5 Oct 2026).
 -- A week without its own row uses the salary of the latest earlier row. Kept here, not in settings, so only Jan can see it.
-insert into public.owner_weeks (week_start, salary_cost, elle_hours, elle_amount)
-values ('2026-10-05', 1960, 0, 0)
+-- KW40 and KW41 were school holidays: no Elle income. Salary starts in KW41.
+insert into public.owner_weeks (week_start, salary_cost, elle_hours, elle_amount, note)
+values ('2026-09-28', 0, 0, 0, 'School holidays'), ('2026-10-05', 1960, 0, 0, 'School holidays')
 on conflict (week_start) do nothing;

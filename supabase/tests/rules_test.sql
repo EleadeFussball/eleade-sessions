@@ -908,6 +908,38 @@ do $$ begin
   end;
 end $$;
 
+
+-- ---------- correcting a sent invoice ----------
+reset role;
+insert into public.sessions (id, session_date, coach_id, format, outcome) values
+  ('00000000-0000-0000-0000-0000000d0010', public.today_sydney(), '00000000-0000-0000-0000-0000000000c4', '1:1', 'attended');
+insert into public.session_players values ('00000000-0000-0000-0000-0000000d0010', '00000000-0000-0000-0000-0000000000b1');
+select total as mid_total, number as mid_no from public.coach_invoices where id = :'inv_mid' \gset
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a4';
+select public.update_invoice(:'inv_mid');
+select pg_temp.check('a coach can update this week''s invoice: the new session is added, same number',
+  (select total > :mid_total and number = :mid_no from public.coach_invoices where id = :'inv_mid')
+  and (select count(*) = 1 from public.invoice_lines where session_id = '00000000-0000-0000-0000-0000000d0010'));
+do $$ begin
+  begin
+    perform public.update_invoice((select id from public.coach_invoices where period_end < public.today_sydney() - extract(isodow from public.today_sydney())::int + 1 order by period_end limit 1));
+    perform pg_temp.check('last week''s invoice is closed for the coach', false);
+  exception when others then perform pg_temp.check('last week''s invoice is closed for the coach', sqlerrm like '%Sunday 8pm%' or sqlerrm like '%already paid%', sqlerrm);
+  end;
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select public.mark_invoices_paid(array[:'inv_mid']::uuid[]);
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a4';
+do $$ begin
+  begin
+    perform public.update_invoice((select id from public.coach_invoices where status = 'paid' order by period_end desc limit 1));
+    perform pg_temp.check('a paid invoice cannot be changed', false);
+  exception when others then perform pg_temp.check('a paid invoice cannot be changed', sqlerrm like '%already paid%', sqlerrm);
+  end;
+end $$;
+select pg_temp.check('the coach sees the invoice as paid', (select status = 'paid' and paid_at is not null from public.coach_invoices where id = :'inv_mid'));
+
 -- ---------- Player Name on the payment link ----------
 reset role;
 insert into public.players (id, name) values ('00000000-0000-0000-0000-0000000e00a1', 'Named Nina');
@@ -967,7 +999,7 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
 insert into public.owner_weeks (week_start, salary_cost, elle_hours, elle_amount, tyler_elle_sessions, tyler_commission)
 values ('2026-10-12', 1960, 7.5, 525, 3, 60);
 select pg_temp.check('Jan can save his weekly figures and sees the KW41 salary',
-  (select count(*) = 2 and sum(salary_cost) = 3920 from public.owner_weeks));
+  (select count(*) = 3 and sum(salary_cost) = 3920 from public.owner_weeks));
 
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;

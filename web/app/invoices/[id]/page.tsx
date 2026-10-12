@@ -1,8 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { useParams, useRouter } from 'next/navigation';
+import { supabase, errorText } from '@/lib/supabase';
+import { editDeadline, invoiceEditable, updateInvoice } from '@/lib/invoices';
 import { useAuth } from '@/lib/auth';
 import { fmtDate, fromISO, money, isoWeek } from '@/lib/dates';
 
@@ -12,10 +13,33 @@ import { invoiceNo, type CoachInvoice, type InvoiceLine } from '@/lib/types';
 
 export default function InvoicePage() {
   const { id } = useParams<{ id: string }>();
-  const { isAdmin } = useAuth();
+  const { isAdmin, coach } = useAuth();
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [msg, setMsg] = useState('');
   const [inv, setInv] = useState<CoachInvoice | null>(null);
   const [lines, setLines] = useState<InvoiceLine[]>([]);
   const [loaded, setLoaded] = useState(false);
+
+  async function load() {
+    const [a, b] = await Promise.all([
+      supabase.from('coach_invoices').select('*').eq('id', id).maybeSingle(),
+      supabase.from('invoice_lines').select('*').eq('invoice_id', id).order('line_date'),
+    ]);
+    setInv(a.data as CoachInvoice | null);
+    setLines((b.data as InvoiceLine[]) ?? []);
+    setLoaded(true);
+  }
+
+  async function update() {
+    setBusy(true); setErr(''); setMsg('');
+    const { id: kept, error } = await updateInvoice(id);
+    setBusy(false);
+    if (error) { setErr(errorText(error)); return; }
+    if (!kept) { router.push('/week'); return; }
+    await load(); setMsg('Invoice updated from your logged sessions.');
+  }
 
   useEffect(() => {
     Promise.all([
@@ -42,6 +66,15 @@ export default function InvoicePage() {
         <Link href={isAdmin ? '/admin' : '/week'} className="btn small ghost">Back</Link>
         <button type="button" className="btn small" onClick={() => window.print()}>Download PDF</button>
       </div>
+      {(isAdmin || inv.coach_id === coach?.id) && invoiceEditable(inv, isAdmin) && (
+        <div className="panel-form no-print" style={{ marginBottom: 16 }}>
+          <p style={{ marginTop: 0 }}><strong>Need to change something?</strong> Fix the session on the Calendar or My week page (tap it, then Edit), then tap Update invoice. The invoice keeps its number.</p>
+          <p className="hint">{isAdmin ? 'You can update any unpaid invoice.' : `Open for changes until Sunday ${fmtDate(editDeadline(inv))}, 8pm, unless Jan pays it first.`} If nothing is left to pay, the invoice is withdrawn.</p>
+          <button type="button" className="btn small" disabled={busy} onClick={update}>{busy ? 'Updating' : 'Update invoice'}</button>
+        </div>
+      )}
+      {err && <div className="notice err no-print" role="alert">{err}</div>}
+      {msg && <div className="notice ok no-print">{msg}</div>}
       <p className="hint no-print">Download PDF opens the print window. Choose &quot;Save as PDF&quot; to keep a copy for your tax records.</p>
 
       <article className="invoice">
