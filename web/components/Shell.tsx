@@ -30,6 +30,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const [invoicesWaiting, setInvoicesWaiting] = useState(0);
   const [invoiceDue, setInvoiceDue] = useState(0);
   const [ownerDue, setOwnerDue] = useState(false);
+  const [toInvoice, setToInvoice] = useState(0);
 
   // Reminder for Jan: from Sunday 5pm until Monday night, if this week's salary and Elle figures are not saved yet.
   useEffect(() => {
@@ -40,6 +41,16 @@ export function Shell({ children }: { children: ReactNode }) {
     const week = weekStart(dow === 1 ? addDays(todayISO(), -1) : todayISO());
     let alive = true;
     supabase.from('owner_weeks').select('week_start').eq('week_start', week).maybeSingle().then(({ data }) => { if (alive) setOwnerDue(!data); });
+    return () => { alive = false; };
+  }, [isAdmin, path]);
+
+  // Reminder for Jan: invoices to raise in MYOB
+  useEffect(() => {
+    if (!isAdmin) return;
+    let alive = true;
+    supabase.rpc('invoice_reminders').then(({ data }) => {
+      if (alive) setToInvoice(((data as { done_at: string | null }[]) ?? []).filter((r) => !r.done_at).length);
+    });
     return () => { alive = false; };
   }, [isAdmin, path]);
 
@@ -105,6 +116,11 @@ export function Shell({ children }: { children: ReactNode }) {
         {!session.user.user_metadata?.password_set && path !== '/account' && (
           <div className="notice warn">
             Set a password so you can sign in without waiting for an email. <Link href="/account">Set password</Link>
+          </div>
+        )}
+        {toInvoice > 0 && path !== '/admin' && (
+          <div className="notice warn">
+            {toInvoice} invoice{toInvoice === 1 ? '' : 's'} to send in MYOB. <Link href="/admin">Open Admin</Link>
           </div>
         )}
         {ownerDue && path !== '/admin' && (

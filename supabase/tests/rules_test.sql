@@ -987,6 +987,42 @@ select (select count(*) = 0 from public.calendar_feed(:'tok1')) as reset_ok \gse
 reset role;
 select pg_temp.check('resetting the link stops the old one', :'reset_ok'::boolean and :'tok1' <> :'tok2');
 
+
+-- ---------- invoice reminders for MYOB ----------
+reset role;
+insert into public.players (id, name, billing_model) values ('00000000-0000-0000-0000-0000000e00c1', 'Renew Rita', 'package');
+insert into public.credit_ledger (player_id, kind, sessions_delta, analyses_delta, package_name, amount_paid, reason, effective_date)
+values ('00000000-0000-0000-0000-0000000e00c1', 'purchase', 1, 0, '5 pack', 600, 'Bought 5 pack', public.today_sydney() - 20);
+insert into public.players (id, name, billing_model, monthly_recurring) values ('00000000-0000-0000-0000-0000000e00c2', 'Monthly Max', 'package', true);
+insert into public.credit_ledger (player_id, kind, sessions_delta, analyses_delta, package_name, amount_paid, reason, effective_date)
+values ('00000000-0000-0000-0000-0000000e00c2', 'purchase', 4, 1, 'Monthly', 650, 'Bought Monthly', public.today_sydney() - 27);
+insert into public.owner_weeks (week_start, salary_cost, elle_hours, elle_rate, elle_amount, tyler_elle_sessions, tyler_commission_rate, tyler_commission)
+values (date_trunc('week', public.today_sydney() - 7)::date, 1960, 7.5, 70, 525, 3, 20, 60)
+on conflict (week_start) do update set elle_hours = 7.5, elle_amount = 525, tyler_elle_sessions = 3, tyler_commission = 60;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select pg_temp.check('a package with one credit left asks for a renewal invoice at the new price plus GST',
+  (select amount_ex = 650 and gst = 65 and total = 715 and item = 'eleade 5 pack' from public.invoice_reminders() where bill_to = 'Renew Rita'));
+select pg_temp.check('a recurring monthly package asks for next month''s invoice',
+  exists (select 1 from public.invoice_reminders() where kind = 'monthly' and bill_to = 'Monthly Max' and amount_ex = 650));
+select pg_temp.check('last week''s Elle figures give one invoice: hours and Tyler''s commission, plus GST',
+  (select amount_ex = 585 and total = 643.5 and details like '%7.5 hours%' and details like '%3 sessions%' from public.invoice_reminders() where kind = 'elle' and due_from = date_trunc('week', public.today_sydney() - 7)::date + 6));
+insert into public.invoice_reminders_done (key) select key from public.invoice_reminders() where bill_to = 'Renew Rita';
+select pg_temp.check('older package names count as the standard package',
+  public.package_kind('10 sessions + 1 analysis') = '10 pack' and public.package_price('5 sessions + 1 analysis', null) = 650
+  and public.package_price('8 sessions + 1 analysis', 900) = 900);
+select pg_temp.check('a ticked-off reminder shows as done',
+  (select done_at is not null from public.invoice_reminders() where bill_to = 'Renew Rita'));
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+do $$ begin
+  begin
+    perform 1 from public.invoice_reminders();
+    perform pg_temp.check('coaches cannot see invoice reminders', false);
+  exception when others then perform pg_temp.check('coaches cannot see invoice reminders', sqlerrm like 'Only Jan%');
+  end;
+end $$;
+
+reset role;
 -- ---------- Player Name on the payment link ----------
 reset role;
 insert into public.players (id, name) values ('00000000-0000-0000-0000-0000000e00a1', 'Named Nina');

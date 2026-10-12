@@ -15,7 +15,7 @@ import { PAYMENT_LABEL, type PaymentMethod, type PlayerBalance, type SessionRow 
 type Player = {
   id: string; name: string; family: string | null; billing_model: 'package' | 'pay_per_session';
   session_price: number | null; main_coach_id: string | null; active: boolean; opening_confirmed: boolean; profile_notes: string | null;
-  created_by: string | null;
+  created_by: string | null; monthly_recurring?: boolean;
 };
 type Ledger = { id: string; kind: string; sessions_delta: number; analyses_delta: number; pairs_delta: number; package_name: string | null;
   amount_paid: number | null; reason: string; effective_date: string; expires_on: string | null; player_id: string;
@@ -232,7 +232,7 @@ export default function PlayerPage() {
 const TAILORED = '__tailored__';
 const PACKAGES = [
   { name: '5 pack', s: 5, a: 0, price: 650, months: 3 },
-  { name: '10 pack', s: 10, a: 2, price: 1300, months: 6 },
+  { name: '10 pack', s: 10, a: 1, price: 1250, months: 6 },
   { name: 'Monthly', s: 4, a: 1, price: 650, months: 0 },
 ];
 
@@ -443,14 +443,16 @@ function RecordPackage({ playerId, name, billing, onSaved }: { playerId: string;
 function PaymentSettings({ p, onSaved }: { p: Player; onSaved: () => void }) {
   const [model, setModel] = useState(p.billing_model);
   const [price, setPrice] = useState(p.session_price?.toString() ?? '');
+  const [recurring, setRecurring] = useState(!!p.monthly_recurring);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
-  useEffect(() => { setModel(p.billing_model); setPrice(p.session_price?.toString() ?? ''); }, [p.billing_model, p.session_price]);
+  useEffect(() => { setModel(p.billing_model); setPrice(p.session_price?.toString() ?? ''); setRecurring(!!p.monthly_recurring); }, [p.billing_model, p.session_price, p.monthly_recurring]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault(); setErr(''); setMsg('');
     const { error } = await supabase.from('players').update({
       billing_model: model, session_price: model === 'pay_per_session' && price ? Number(price) : null,
+      monthly_recurring: model === 'package' && recurring,
     }).eq('id', p.id);
     if (error) setErr(errorText(error)); else { setMsg('Payment settings saved.'); onSaved(); }
   }
@@ -464,7 +466,13 @@ function PaymentSettings({ p, onSaved }: { p: Player; onSaved: () => void }) {
           <button type="button" aria-pressed={model === 'pay_per_session'} onClick={() => setModel('pay_per_session')}>Pays weekly</button>
         </div>
         {model === 'package' ? (
-          <p className="hint"><strong>Package:</strong> prepaid credits that count down with each session. Choose 5 pack, 10 pack, Monthly or a tailored package under &quot;Record a package bought&quot;. The payment is recorded as Stripe, bank transfer, cash or other.</p>
+          <>
+            <p className="hint"><strong>Package:</strong> prepaid credits that count down with each session. Choose 5 pack, 10 pack, Monthly or a tailored package under &quot;Record a package bought&quot;. The payment is recorded as Stripe, bank transfer, cash or other.</p>
+            <label className="check">
+              <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} />
+              <span>Recurring monthly package: remind me to invoice the next month ($650 + GST) 5 days before it starts.</span>
+            </label>
+          </>
         ) : (
           <>
             <p className="hint"><strong>Pays weekly:</strong> no credits. Sessions are added up each week and paid by bank transfer, and you mark the week as paid on the Admin page.</p>
