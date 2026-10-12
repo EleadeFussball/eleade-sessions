@@ -2,7 +2,7 @@
 # Applies new files in supabase/migrations to the live database, in order, each in one transaction.
 # Already applied files are recorded in public.app_migrations, so each file runs once.
 set -euo pipefail
-[ -n "${SUPABASE_DB_URL:-}" ] || { echo "::error::Secret SUPABASE_DB_URL is missing"; exit 1; }
+[ -n "${SUPABASE_DB_URL:-}" ] || { echo "::notice::No SUPABASE_DB_URL secret: database changes are pasted by hand (supabase/paste-me.sql)."; exit 0; }
 cd "$(dirname "$0")/../../supabase/migrations"
 P=(psql "$SUPABASE_DB_URL" -X -q -v ON_ERROR_STOP=1 -t -A)
 

@@ -88,4 +88,4 @@ Secrets needed in the GitHub repo: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`.
 ## Database updates
 
 Every push to main that changes `supabase/migrations/` runs `.github/workflows/db-migrate.yml`: the rules tests run on a scratch Postgres first, and only if all pass, `scripts/db/migrate.sh` applies the new migration files to the live database (each once, recorded in `public.app_migrations`).
-Secret needed: `SUPABASE_DB_URL` (Supabase > Connect > Session pooler connection string, with the database password).
+Optional secret `SUPABASE_DB_URL` (Supabase > Connect > Session pooler connection string). Without it the apply step is skipped and new SQL is pasted by hand from `supabase/paste-me.sql` in the Supabase SQL Editor.
