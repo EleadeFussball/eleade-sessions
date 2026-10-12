@@ -7,19 +7,23 @@ import { supabase } from '@/lib/supabase';
 import { addDays, todayISO, fromISO, weekStart } from '@/lib/dates';
 
 const TABS = [
-  { href: '/log', label: 'Log', admin: false },
-  { href: '/calendar', label: 'Calendar', admin: false },
+  { href: '/', label: 'Your week', admin: false },
   { href: '/players', label: 'Players', admin: false },
   { href: '/enquiries', label: 'Enquiries', admin: false },
-  { href: '/week', label: 'My week', admin: false },
+  { href: '/week', label: 'Invoices', admin: false },
   { href: '/admin', label: 'Admin', admin: true },
   { href: '/stats', label: 'Stats', admin: true },
   { href: '/team', label: 'Team', admin: true },
 ];
 
+// "Your week" also covers the calendar and the log page it links to
+const isOnPath = (path: string, href: string) =>
+  href === '/' ? path === '/' || path.startsWith('/calendar') || path.startsWith('/log') : path.startsWith(href);
+
 export function Shell({ children }: { children: ReactNode }) {
   const { loading, session, coach, isAdmin } = useAuth();
   const path = usePathname();
+  const isOn = (href: string) => isOnPath(path, href);
   const router = useRouter();
   const isLogin = path === '/login';
   const [newEnquiries, setNewEnquiries] = useState(0);
@@ -93,7 +97,7 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="app">
       <div className="topbar-wrap">
         <header className="topbar">
-          <Link href="/log" className="brand" aria-label="Eleade, back to Log"><img src="/eleade-logo-white.svg" alt="eleade" /></Link>
+          <Link href="/" className="brand" aria-label="Eleade, back to Your week"><img src="/eleade-logo-white.svg" alt="eleade" /></Link>
           <Link href="/account" className="who" aria-label="Account and password">{coach.name}</Link>
         </header>
       </div>
@@ -117,8 +121,8 @@ export function Shell({ children }: { children: ReactNode }) {
       </main>
       <nav className="tabs" aria-label="Main">
         {TABS.filter((t) => !t.admin || isAdmin).map((t) => (
-          <Link key={t.href} href={t.href} className={path.startsWith(t.href) ? 'tab on' : 'tab'}
-                aria-current={path.startsWith(t.href) ? 'page' : undefined}>
+          <Link key={t.href} href={t.href} className={isOn(t.href) ? 'tab on' : 'tab'}
+                aria-current={isOn(t.href) ? 'page' : undefined}>
             {t.label}
             {t.href === '/admin' && invoicesWaiting > 0 && <span className="tab-badge" aria-label={`${invoicesWaiting} invoices waiting`}>{invoicesWaiting}</span>}
             {t.href === '/enquiries' && newEnquiries > 0 && <span className="tab-badge" aria-label={`${newEnquiries} waiting`}>{newEnquiries}</span>}

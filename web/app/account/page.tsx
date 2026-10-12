@@ -96,7 +96,7 @@ function InvoiceDetails({ coachId }: { coachId: string }) {
   return (
     <>
       <h2>Invoice details</h2>
-      <p className="hint">Used on the invoices you submit under My week. Only you and Jan can see them.</p>
+      <p className="hint">Used on the invoices you submit under Invoices. Only you and Jan can see them.</p>
       <form onSubmit={save}>
         <label className="field"><span>Full name (as on your ABN)</span>
           <input type="text" autoComplete="name" value={legal} onChange={(e) => setLegal(e.target.value)} /></label>

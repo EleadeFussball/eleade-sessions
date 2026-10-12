@@ -6,16 +6,17 @@ import { useAuth } from '@/lib/auth';
 import { addDays, fmtDate, todayISO } from '@/lib/dates';
 import { normaliseTime } from '@/lib/time';
 import { FORMAT_LABEL, OUTCOME_LABEL, type Outcome } from '@/lib/types';
-import { cancelEntry, canComplete, completeFrom, confirmEntry, hhmm, moveEntry, timeRange, type ScheduleEntry } from '@/lib/schedule';
+import { cancelEntry, canComplete, completeFrom, confirmEntry, hhmm, moveEntry, savePrep, timeRange, type ScheduleEntry } from '@/lib/schedule';
 import { StripeNote } from '@/components/StripeNote';
 import { EditSession, canEditSession } from '@/components/EditSession';
 
 /** One planned session, with the actions a coach needs: done, cancelled, moved, removed. */
 export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, startMode = '' }:
-  { o: ScheduleEntry; onDone: () => void; showDay?: boolean; showCoach?: boolean; startMode?: '' | 'done' }) {
+  { o: ScheduleEntry; onDone: () => void; showDay?: boolean; showCoach?: boolean; startMode?: '' | 'done' | 'plan' }) {
   const { coach, coaches, isAdmin } = useAuth();
-  const [mode, setMode] = useState<'' | 'done' | 'cancel' | 'move' | 'edit'>(startMode);
-  const [topic, setTopic] = useState('');
+  const [mode, setMode] = useState<'' | 'done' | 'cancel' | 'move' | 'edit' | 'plan'>(startMode);
+  const [topic, setTopic] = useState(o.prep ?? '');
+  const [plan, setPlan] = useState(o.prep ?? '');
   const [obs, setObs] = useState('');
   const [improve, setImprove] = useState('');
   const [method, setMethod] = useState<'' | 'cash' | 'stripe'>('');
@@ -48,6 +49,13 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
     if (error) setErr(errorText(error)); else { setMode(''); onDone(); }
   }
 
+  async function savePlan() {
+    setBusy(true); setErr('');
+    const { error } = await savePrep(o, plan);
+    setBusy(false);
+    if (error) setErr(errorText(error)); else { setMode(''); onDone(); }
+  }
+
   async function remove() {
     if (!window.confirm('Take this session off the calendar? Nobody is charged.')) return;
     setBusy(true); setErr('');
@@ -69,6 +77,7 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
         {FORMAT_LABEL[o.format]}{o.location ? `, ${o.location}` : ''}{showCoach && coachName ? ` · ${coachName}` : ''}
       </div>
       {o.note && <div className="sub">{o.note}</div>}
+      {o.prep && mode !== 'plan' && <div className="prep"><span className="prep-label">Plan</span> {o.prep}</div>}
 
       {o.session_id && mode === '' && canEditSession(o, isAdmin, coach?.id) && (
         <div className="row mt">
@@ -80,6 +89,7 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
       )}
       {o.kind !== 'logged' && !o.session_id && mode === '' && mine && (
         <div className="row mt" style={{ flexWrap: 'wrap' }}>
+          <button type="button" className="btn small ghost" onClick={() => setMode('plan')}>{o.prep ? 'Edit plan' : 'Plan session'}</button>
           <button type="button" className="btn small" disabled={!completable} onClick={() => setMode('done')}>Completed</button>
           <button type="button" className="btn small ghost" disabled={future} onClick={() => setMode('cancel')}>Cancelled</button>
           <button type="button" className="btn small ghost" onClick={() => setMode('move')}>Move</button>
@@ -87,9 +97,22 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
         </div>
       )}
 
+      {mode === 'plan' && (
+        <div className="mt">
+          <label className="field"><span>What you will work on</span>
+            <textarea value={plan} onChange={(e) => setPlan(e.target.value)} autoFocus
+                      placeholder="e.g. Receiving on the half turn, weak foot finishing, 1v1 to goal" /></label>
+          <p className="hint">Optional. Your plan is used as &quot;What you worked on&quot; when you complete the session, so afterwards you only add how it went and the next session. You can still change it then.</p>
+          <div className="row">
+            <button type="button" className="btn small" disabled={busy} onClick={savePlan}>{busy ? 'Saving' : 'Save plan'}</button>
+            <button type="button" className="btn small ghost" onClick={() => { setPlan(o.prep ?? ''); setMode(''); }}>Back</button>
+          </div>
+        </div>
+      )}
+
       {mode === 'done' && (
         <div className="mt">
-          <p className="hint">Notes are optional. Tap the microphone on your keyboard to dictate.</p>
+          <p className="hint">{o.prep ? 'Your plan is filled in below. Change it if the session went differently.' : 'Notes are optional. Tap the microphone on your keyboard to dictate.'}</p>
           <label className="field"><span>What you worked on</span><textarea value={topic} onChange={(e) => setTopic(e.target.value)} /></label>
           <label className="field"><span>How it went</span><textarea value={obs} onChange={(e) => setObs(e.target.value)} /></label>
           <label className="field"><span>Next session</span><textarea value={improve} onChange={(e) => setImprove(e.target.value)} style={{ minHeight: 64 }} /></label>

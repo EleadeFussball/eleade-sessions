@@ -69,7 +69,7 @@ export function OwnerWeek() {
 
   return (
     <section>
-      <h2>My week: salary and Elle Academy</h2>
+      <h2>Salary and Elle Academy</h2>
       <p className="hint">Only you can see this. Fill it in each Sunday. The figures start from last week&apos;s, so usually you only check them and save.</p>
       <form onSubmit={save}>
         <label className="field"><span>Week</span>

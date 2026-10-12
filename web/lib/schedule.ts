@@ -18,6 +18,8 @@ export type ScheduleEntry = {
   moved: boolean;
   session_id: string | null;
   outcome: Outcome | null;
+  /** the coach's plan for the session, written before it happens */
+  prep?: string | null;
 };
 
 export const hhmm = (t: string | null) => (t ? t.slice(0, 5) : '');
@@ -33,7 +35,25 @@ export const entryKey = (o: ScheduleEntry) => `${o.kind}-${o.ref_id}-${o.plan_da
 
 export async function loadSchedule(from: string, to: string): Promise<ScheduleEntry[]> {
   const { data } = await supabase.rpc('calendar', { p_from: from, p_to: to });
-  return (data as ScheduleEntry[]) ?? [];
+  const rows = (data as ScheduleEntry[]) ?? [];
+  // add the coaches' session plans (if the plan table is not there yet, the calendar still works)
+  const bIds = rows.filter((o) => o.kind === 'once' && !o.session_id).map((o) => o.ref_id);
+  const pIds = [...new Set(rows.filter((o) => o.kind === 'regular' && !o.session_id).map((o) => o.ref_id))];
+  const [b, p] = await Promise.all([
+    bIds.length ? supabase.from('session_prep').select('booking_id, topic').in('booking_id', bIds) : Promise.resolve({ data: [] }),
+    pIds.length ? supabase.from('session_prep').select('plan_id, plan_date, topic').in('plan_id', pIds) : Promise.resolve({ data: [] }),
+  ]);
+  const byBooking = new Map(((b.data ?? []) as { booking_id: string; topic: string }[]).map((x) => [x.booking_id, x.topic]));
+  const byPlan = new Map(((p.data ?? []) as { plan_id: string; plan_date: string; topic: string }[]).map((x) => [`${x.plan_id}-${x.plan_date}`, x.topic]));
+  return rows.map((o) => ({
+    ...o,
+    prep: o.session_id ? null : o.kind === 'once' ? byBooking.get(o.ref_id) ?? null : o.kind === 'regular' ? byPlan.get(`${o.ref_id}-${o.plan_date}`) ?? null : null,
+  }));
+}
+
+/** Save the plan for a planned session; an empty text clears it. */
+export function savePrep(o: ScheduleEntry, topic: string) {
+  return supabase.rpc('save_prep', { p_kind: o.kind, p_ref_id: o.ref_id, p_plan_date: o.plan_date, p_topic: topic });
 }
 
 export function confirmEntry(o: ScheduleEntry, outcome: Outcome, notes: { topic?: string; obs?: string; improve?: string; method?: '' | 'cash' | 'stripe' }) {

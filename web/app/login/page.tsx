@@ -16,7 +16,7 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
-  useEffect(() => { if (session) router.replace('/log'); }, [session, router]);
+  useEffect(() => { if (session) router.replace('/'); }, [session, router]);
 
   async function signIn(e: React.FormEvent) {
     e.preventDefault();

@@ -319,3 +319,21 @@ details.panel[open] > summary { border-bottom: 1px solid var(--line); margin-bot
 .check input { margin-top: 3px; width: 18px; height: 18px; flex: 0 0 auto; }
 .ev-time, .ev-name { flex-shrink: 0; }
 .ev-done.corner { position: absolute; top: 2px; right: 3px; margin: 0; padding: 0 6px; }
+
+/* session plan written before the session */
+.prep { margin-top: 4px; font-size: .88rem; white-space: pre-wrap; }
+.prep-label { display: inline-block; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-right: 4px; }
+
+/* Your week: today and tomorrow side by side */
+.days2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 22px; }
+.day-col { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; min-width: 0; }
+.day-col h2 { margin: 0 0 8px; font-size: 1.05rem; }
+.day-col .day-date { color: var(--muted); font-weight: 400; font-size: .8rem; margin-left: 4px; }
+.day-card { display: block; width: 100%; text-align: left; border: 1px solid var(--line); border-left: 4px solid var(--cc, var(--ink)); border-radius: 6px;
+  background: color-mix(in srgb, var(--cc, #000) 6%, #fff); padding: 7px 8px; margin: 0 0 6px; cursor: pointer; font: inherit; color: inherit; }
+.day-card.done { background: color-mix(in srgb, var(--cc, #000) 18%, #fff); }
+.day-card .dc-time { font-weight: 700; font-variant-numeric: tabular-nums; font-size: .85rem; }
+.day-card .dc-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.day-card .dc-sub { color: var(--muted); font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.day-card .dc-state { display: inline-block; margin-top: 4px; font-size: .72rem; font-weight: 700; }
+@media (max-width: 380px) { .days2 { gap: 6px; } .day-col { padding: 8px 6px; } }

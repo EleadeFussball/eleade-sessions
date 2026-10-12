@@ -239,7 +239,7 @@ export default function AdminPage() {
           <tfoot><tr><td>Total</td><td className="n">{money(payTotal)}</td></tr></tfoot>
         </table>
       )}
-      <p className="hint mt">Each coach&apos;s line matches what they see under My week, so their invoice can be paid without checking. Salaried staff are not listed.</p>
+      <p className="hint mt">Each coach&apos;s line matches what they see under Invoices, so their invoice can be paid without checking. Salaried staff are not listed.</p>
 
       <BackupDownload />
     </>

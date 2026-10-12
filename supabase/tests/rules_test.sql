@@ -940,6 +940,31 @@ do $$ begin
 end $$;
 select pg_temp.check('the coach sees the invoice as paid', (select status = 'paid' and paid_at is not null from public.coach_invoices where id = :'inv_mid'));
 
+
+-- ---------- planning a session before it happens ----------
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.book_session('00000000-0000-0000-0000-0000000000c2', public.today_sydney() + 2, time '15:00', 60, '1:1',
+  array['00000000-0000-0000-0000-0000000000b1']::uuid[], 'Park', null) as prep_bk \gset
+select public.save_prep('once', :'prep_bk', null, '  Weak foot finishing  ');
+select pg_temp.check('a coach can plan their session ahead',
+  (select topic = 'Weak foot finishing' from public.session_prep where booking_id = :'prep_bk'));
+select public.save_prep('once', :'prep_bk', null, 'Weak foot finishing, 1v1');
+select pg_temp.check('saving again replaces the plan',
+  (select count(*) = 1 and max(topic) = 'Weak foot finishing, 1v1' from public.session_prep where booking_id = :'prep_bk'));
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a3';
+do $$ begin
+  begin
+    perform public.save_prep('once', (select booking_id from public.session_prep limit 1), null, 'Mine now');
+    perform pg_temp.check('a coach cannot plan another coach''s session', false);
+  exception when others then perform pg_temp.check('a coach cannot plan another coach''s session', sqlerrm like '%your own%');
+  end;
+end $$;
+select pg_temp.check('other coaches can read the plan', (select count(*) >= 1 from public.session_prep));
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.save_prep('once', :'prep_bk', null, '');
+select pg_temp.check('an empty plan clears it', not exists (select 1 from public.session_prep where booking_id = :'prep_bk'));
+
 -- ---------- Player Name on the payment link ----------
 reset role;
 insert into public.players (id, name) values ('00000000-0000-0000-0000-0000000e00a1', 'Named Nina');

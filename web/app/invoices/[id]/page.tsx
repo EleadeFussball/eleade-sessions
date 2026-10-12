@@ -68,7 +68,7 @@ export default function InvoicePage() {
       </div>
       {(isAdmin || inv.coach_id === coach?.id) && invoiceEditable(inv, isAdmin) && (
         <div className="panel-form no-print" style={{ marginBottom: 16 }}>
-          <p style={{ marginTop: 0 }}><strong>Need to change something?</strong> Fix the session on the Calendar or My week page (tap it, then Edit), then tap Update invoice. The invoice keeps its number.</p>
+          <p style={{ marginTop: 0 }}><strong>Need to change something?</strong> Fix the session on Your week or the Invoices page (tap it, then Edit), then tap Update invoice. The invoice keeps its number.</p>
           <p className="hint">{isAdmin ? 'You can update any unpaid invoice.' : `Open for changes until Sunday ${fmtDate(editDeadline(inv))}, 8pm, unless Jan pays it first.`} If nothing is left to pay, the invoice is withdrawn.</p>
           <button type="button" className="btn small" disabled={busy} onClick={update}>{busy ? 'Updating' : 'Update invoice'}</button>
         </div>

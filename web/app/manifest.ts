@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'eleade Hub',
     short_name: 'eleade Hub',
-    start_url: '/log',
+    start_url: '/',
     display: 'standalone',
     background_color: '#FAFAF8',
     theme_color: '#141414',

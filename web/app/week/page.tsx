@@ -119,7 +119,7 @@ export default function WeekPage() {
 
   return (
     <>
-      <h1>{coachId === coach?.id ? 'My week' : `${name}'s week`}</h1>
+      <h1>{coachId === coach?.id ? 'Sessions and invoices' : `${name}'s sessions and invoices`}</h1>
       <div className="toolbar">
         <div className="weeknav">
           <button type="button" aria-label="Previous week" onClick={() => setStart(addDays(start, -7))}>‹</button>
