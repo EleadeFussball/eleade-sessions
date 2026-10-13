@@ -19,7 +19,7 @@ type Player = {
 };
 type Ledger = { id: string; kind: string; sessions_delta: number; analyses_delta: number; pairs_delta: number; package_name: string | null;
   amount_paid: number | null; reason: string; effective_date: string; expires_on: string | null; player_id: string;
-  payment_status: 'awaiting' | 'confirmed'; payment_method: PaymentMethod | null; confirmed_at: string | null };
+  payment_status: 'awaiting' | 'confirmed'; payment_method: PaymentMethod | null; confirmed_at: string | null; edited_at?: string | null };
 type Note = { id: string; body: string; author: string | null; created_at: string };
 
 const KIND_LABEL: Record<string, string> = { opening: 'Opening balance', purchase: 'Package bought', free: 'Free session', correction: 'Correction', expiry: 'Expired' };
@@ -37,6 +37,7 @@ export default function PlayerPage() {
   const [showOld, setShowOld] = useState(false);
   const [err, setErr] = useState('');
   const [editingName, setEditingName] = useState(false);
+  const [editingLedger, setEditingLedger] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState('');
 
   const load = useCallback(async () => {
@@ -195,12 +196,17 @@ export default function PlayerPage() {
         <table className="t">
           <thead><tr><th>Date</th><th>What</th><th className="n">1:1 sessions</th><th className="n">2:1 sessions</th><th className="n">Analyses</th></tr></thead>
           <tbody>
-            {ledger.map((l) => (
+            {ledger.map((l) => editingLedger === l.id ? (
+              <tr key={l.id}><td colSpan={5}>
+                <LedgerEdit l={l} onCancel={() => setEditingLedger(null)} onSaved={() => { setEditingLedger(null); load(); }} />
+              </td></tr>
+            ) : (
               <tr key={l.id}>
                 <td>{fmtDate(l.effective_date)}</td>
                 <td>
                   {KIND_LABEL[l.kind] ?? l.kind}{l.package_name ? `, ${l.package_name}` : ''}{l.amount_paid ? `, ${money(l.amount_paid)}` : ''}
-                  <br /><span className="hint">{l.reason}{l.payment_method ? `, paid by ${PAYMENT_LABEL[l.payment_method].toLowerCase()}` : ''}</span>
+                  <br /><span className="hint">{l.reason}{l.payment_method ? `, paid by ${PAYMENT_LABEL[l.payment_method].toLowerCase()}` : ''}{l.edited_at ? `, changed ${fmtDate(l.edited_at.slice(0, 10))}` : ''}</span>
+                  {isAdmin && <button type="button" className="linkbtn" style={{ marginLeft: 8 }} onClick={() => setEditingLedger(l.id)}>Edit</button>}
                   {l.kind === 'purchase' && (
                     <div style={{ marginTop: 4 }}>
                       {l.payment_status === 'awaiting'
@@ -226,6 +232,81 @@ export default function PlayerPage() {
 
       {err && <div className="notice err">{err}</div>}
     </>
+  );
+}
+
+/** Jan only: change or remove a credit entry (package, correction, opening balance). */
+function LedgerEdit({ l, onSaved, onCancel }: { l: Ledger; onSaved: () => void; onCancel: () => void }) {
+  const [name, setName] = useState(l.package_name ?? '');
+  const [s, setS] = useState(String(Number(l.sessions_delta)));
+  const [p2, setP2] = useState(String(Number(l.pairs_delta ?? 0)));
+  const [a, setA] = useState(String(Number(l.analyses_delta)));
+  const [price, setPrice] = useState(l.amount_paid === null ? '' : String(Number(l.amount_paid)));
+  const [date, setDate] = useState(l.effective_date);
+  const [expires, setExpires] = useState(l.expires_on ?? '');
+  const [reason, setReason] = useState(l.reason ?? '');
+  const [paid, setPaid] = useState(l.payment_status === 'confirmed');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const n = (v: string) => Number(v.replace(',', '.'));
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault(); setErr('');
+    if ([s, p2, a].some((v) => !Number.isFinite(n(v)))) { setErr('Sessions and analyses must be numbers (use a minus for credits taken off).'); return; }
+    if (price.trim() && !(n(price) >= 0)) { setErr('Enter the price ex GST, or leave it empty.'); return; }
+    setBusy(true);
+    const { error } = await supabase.from('credit_ledger').update({
+      package_name: name.trim() || null, sessions_delta: n(s), pairs_delta: n(p2), analyses_delta: n(a),
+      amount_paid: price.trim() ? n(price) : null, effective_date: date, expires_on: expires || null,
+      reason: reason.trim() || (name.trim() ? `Bought ${name.trim()}` : 'Correction'),
+      ...(l.kind === 'purchase' ? { payment_status: paid ? 'confirmed' : 'awaiting' } : {}),
+    }).eq('id', l.id);
+    setBusy(false);
+    if (error) setErr(errorText(error)); else onSaved();
+  }
+
+  async function remove() {
+    if (!window.confirm('Remove this entry? The balance is recalculated straight away.')) return;
+    setBusy(true);
+    const { error } = await supabase.from('credit_ledger').delete().eq('id', l.id);
+    setBusy(false);
+    if (error) setErr(errorText(error)); else onSaved();
+  }
+
+  return (
+    <form onSubmit={save} className="panel-form" style={{ margin: '4px 0' }}>
+      <div className="row" style={{ flexWrap: 'wrap' }}>
+        <label className="field" style={{ flex: '2 1 160px' }}><span>Package</span>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. 10 pack" /></label>
+        <label className="field" style={{ flex: '1 1 110px' }}><span>Price ex GST</span>
+          <input type="text" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} /></label>
+      </div>
+      <div className="row" style={{ flexWrap: 'wrap' }}>
+        <label className="field" style={{ flex: '1 1 80px' }}><span>1:1 sessions</span>
+          <input type="text" inputMode="decimal" value={s} onChange={(e) => setS(e.target.value)} /></label>
+        <label className="field" style={{ flex: '1 1 80px' }}><span>2:1 sessions</span>
+          <input type="text" inputMode="decimal" value={p2} onChange={(e) => setP2(e.target.value)} /></label>
+        <label className="field" style={{ flex: '1 1 80px' }}><span>Analyses</span>
+          <input type="text" inputMode="decimal" value={a} onChange={(e) => setA(e.target.value)} /></label>
+      </div>
+      <div className="row" style={{ flexWrap: 'wrap' }}>
+        <label className="field" style={{ flex: '1 1 140px' }}><span>Date</span>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        <label className="field" style={{ flex: '1 1 140px' }}><span>Expires <span className="hint">(optional)</span></span>
+          <input type="date" value={expires} onChange={(e) => setExpires(e.target.value)} /></label>
+      </div>
+      <label className="field"><span>Note</span><input type="text" value={reason} onChange={(e) => setReason(e.target.value)} /></label>
+      {l.kind === 'purchase' && (
+        <label className="check"><input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} /><span>Payment received</span></label>
+      )}
+      {err && <div className="notice err" role="alert">{err}</div>}
+      <div className="row mt" style={{ flexWrap: 'wrap' }}>
+        <button className="btn small" disabled={busy}>{busy ? 'Saving' : 'Save changes'}</button>
+        <button type="button" className="btn small ghost" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn small ghost" style={{ color: 'var(--red)' }} disabled={busy} onClick={remove}>Remove entry</button>
+      </div>
+      <p className="hint">Credits and balances update straight away. Use a minus for credits taken off.</p>
+    </form>
   );
 }
 

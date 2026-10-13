@@ -331,13 +331,10 @@ select pg_temp.check('confirming clears the list', (select count(*) from public.
 select pg_temp.check('confirmation records who and when',
   (select confirmed_by = '00000000-0000-0000-0000-0000000000a1' and confirmed_at is not null
      from public.credit_ledger where reason = 'Bought 5 pack after assessment'));
-do $$ begin
-  begin
-    update public.credit_ledger set sessions_delta = 50 where reason = 'Bought 5 pack after assessment';
-    perform pg_temp.check('nobody can rewrite credit history', false);
-  exception when others then perform pg_temp.check('nobody can rewrite credit history', true);
-  end;
-end $$;
+update public.credit_ledger set reason = 'Bought 5 pack after assessment (edited)' where reason = 'Bought 5 pack after assessment';
+update public.credit_ledger set reason = 'Bought 5 pack after assessment' where reason = 'Bought 5 pack after assessment (edited)';
+select pg_temp.check('Jan''s own changes to credit history are stamped with who and when',
+  (select edited_by = '00000000-0000-0000-0000-0000000000a1' and edited_at is not null from public.credit_ledger where reason = 'Bought 5 pack after assessment'));
 
 select public.rename_player('00000000-0000-0000-0000-0000000000b3', 'Echo Sibling');
 select pg_temp.check('Jan can rename any player', exists (select 1 from public.players where name = 'Echo Sibling'));
@@ -1021,6 +1018,28 @@ do $$ begin
   exception when others then perform pg_temp.check('coaches cannot see invoice reminders', sqlerrm like 'Only Jan%');
   end;
 end $$;
+
+reset role;
+
+-- ---------- Jan edits a package entry ----------
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+insert into public.credit_ledger (player_id, kind, sessions_delta, analyses_delta, package_name, amount_paid, reason, effective_date)
+values ('00000000-0000-0000-0000-0000000e00c1', 'purchase', 10, 1, '10 pack', 1250, 'Bought 10 pack', public.today_sydney()) returning id as led1 \gset
+update public.credit_ledger set sessions_delta = 11, package_name = 'Tailored package', amount_paid = 1375 where id = :'led1';
+select pg_temp.check('Jan can change a package after saving it, and the change is stamped',
+  (select sessions_delta = 11 and package_name = 'Tailored package' and edited_at is not null from public.credit_ledger where id = :'led1'));
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+update public.credit_ledger set sessions_delta = 50 where id = :'led1';
+delete from public.credit_ledger where id = :'led1';
+reset role;
+select pg_temp.check('a coach cannot change or remove a package entry',
+  (select sessions_delta = 11 from public.credit_ledger where id = :'led1'));
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+delete from public.credit_ledger where id = :'led1';
+reset role;
+select pg_temp.check('Jan can remove a wrong entry', not exists (select 1 from public.credit_ledger where id = :'led1'));
 
 reset role;
 -- ---------- Player Name on the payment link ----------
