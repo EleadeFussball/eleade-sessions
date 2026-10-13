@@ -136,7 +136,8 @@ export default function PlayerPage() {
             )}
             <div><div className="big">{num(bal.analyses_left)}</div><div className="cap">game analyses left</div></div>
           </div>
-          {!p.opening_confirmed && <div className="notice warn">Starting balance taken from the old spreadsheet and not yet confirmed by Jan.</div>}
+          {!p.opening_confirmed && p.billing_model === 'package' && <div className="notice warn">Balance not checked yet.</div>}
+          {p.opening_confirmed && Number(bal.sessions_left ?? 0) <= 0 && <div className="notice err">New package needed: no sessions left.</div>}
           {expiry.filter((e) => e.player_id === p.id || (p.family && e.family === p.family)).map((e) => (
             <div key={e.expires_on} className="notice warn">
               {e.days_left >= 0

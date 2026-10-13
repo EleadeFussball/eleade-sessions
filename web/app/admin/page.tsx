@@ -118,7 +118,7 @@ export default function AdminPage() {
 
       <OwnerWeek />
 
-      {unconfirmed > 0 && <div className="notice warn">{unconfirmed} package players still have an unconfirmed starting balance. Confirm them on each player page.</div>}
+      {unconfirmed > 0 && <div className="notice warn">{unconfirmed} package players still have a balance to check. Tick “confirmed” on each player page once sorted.</div>}
 
       <h2>Coach invoices to pay ({toPay.length})</h2>
       {toPay.length === 0 ? <p className="empty">No invoices waiting.</p> : (

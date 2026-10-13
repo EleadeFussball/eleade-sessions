@@ -80,7 +80,8 @@ export default function PlayersPage() {
                 <Link href={`/players/${p.player_id}`} className="plink">
                   <span>
                     <strong>{p.name}</strong>{' '}
-                    {!p.opening_confirmed && p.billing_model === 'package' && <span className="tag amber">Balance to confirm</span>}
+                    {!p.opening_confirmed && p.billing_model === 'package' && <span className="tag amber">Balance to check</span>}
+                    {p.opening_confirmed && p.billing_model === 'package' && Number(p.sessions_left ?? 0) <= 0 && <span className="tag red">New package needed</span>}
                     <br />
                     <span className="meta">
                       {coachName(p.main_coach_id) || 'No main coach'}
