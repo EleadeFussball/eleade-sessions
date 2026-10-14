@@ -1042,6 +1042,32 @@ reset role;
 select pg_temp.check('Jan can remove a wrong entry', not exists (select 1 from public.credit_ledger where id = :'led1'));
 
 reset role;
+
+-- ---------- cancelling a session in advance ----------
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.book_session('00000000-0000-0000-0000-0000000000c2', public.today_sydney() + 1, time '16:00', 60, '1:1',
+  array['00000000-0000-0000-0000-0000000000b1']::uuid[], 'Park', null) as cx_bk \gset
+select sessions_left as cx_before from public.player_balances where player_id = '00000000-0000-0000-0000-0000000000b1' \gset
+select public.confirm_booking(:'cx_bk', 'cancelled_in_time') as cx_s \gset
+select pg_temp.check('a coach can cancel tomorrow''s session in advance; it stays in the calendar as cancelled',
+  exists (select 1 from public.calendar(public.today_sydney() + 1, public.today_sydney() + 1) c where c.ref_id = :'cx_bk' and c.outcome = 'cancelled_in_time'));
+select pg_temp.check('a session cancelled in advance uses no credit',
+  (select sessions_left = :cx_before from public.player_balances where player_id = '00000000-0000-0000-0000-0000000000b1'));
+select pg_temp.check('a session cancelled in advance is not on the coach invoice',
+  not exists (select 1 from public.invoice_draft('00000000-0000-0000-0000-0000000000c2', public.today_sydney() + 1) d where d.session_id = :'cx_s'));
+select public.undo_cancellation(:'cx_s');
+select pg_temp.check('the cancellation can be undone, and the session is planned again',
+  exists (select 1 from public.calendar(public.today_sydney() + 1, public.today_sydney() + 1) c where c.ref_id = :'cx_bk' and c.session_id is null));
+do $$ begin
+  begin
+    perform public.confirm_booking((select id from public.bookings where session_date = public.today_sydney() + 1 and location = 'Park' limit 1), 'attended');
+    perform pg_temp.check('a future session still cannot be marked completed', false);
+  exception when others then perform pg_temp.check('a future session still cannot be marked completed', sqlerrm like '%future%');
+  end;
+end $$;
+
+reset role;
 -- ---------- Player Name on the payment link ----------
 reset role;
 insert into public.players (id, name) values ('00000000-0000-0000-0000-0000000e00a1', 'Named Nina');

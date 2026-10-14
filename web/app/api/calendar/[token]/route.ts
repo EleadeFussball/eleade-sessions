@@ -67,7 +67,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
   for (const e of rows) {
     const label = FORMAT_LABEL[e.format] ?? e.format;
     const who = e.players || label;
-    const summary = `${e.done ? '✓ ' : ''}${who}${e.format !== '1:1' && e.players ? ` (${label})` : ''}`;
+    const cancelled = e.outcome === 'cancelled_in_time';
+    const summary = `${cancelled ? 'Cancelled: ' : e.done ? '✓ ' : ''}${who}${e.format !== '1:1' && e.players ? ` (${label})` : ''}`;
     const desc = [
       `${label}${e.done ? ', documented' : ''}`,
       e.prep ? `Plan: ${e.prep}` : '',
@@ -83,7 +84,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
       `SUMMARY:${esc(summary)}`,
       ...(e.location ? [`LOCATION:${esc(e.location)}`] : []),
       `DESCRIPTION:${esc(desc)}`,
-      'STATUS:CONFIRMED', 'TRANSP:OPAQUE',
+      cancelled ? 'STATUS:CANCELLED' : 'STATUS:CONFIRMED', cancelled ? 'TRANSP:TRANSPARENT' : 'TRANSP:OPAQUE',
       'END:VEVENT');
   }
   lines.push('END:VCALENDAR');

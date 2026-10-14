@@ -337,3 +337,7 @@ details.panel[open] > summary { border-bottom: 1px solid var(--line); margin-bot
 .day-card .dc-sub { color: var(--muted); font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .day-card .dc-state { display: inline-block; margin-top: 4px; font-size: .72rem; font-weight: 700; }
 @media (max-width: 380px) { .days2 { gap: 6px; } .day-col { padding: 8px 6px; } }
+
+/* cancelled in advance: still visible, faded with a red outline */
+.ev.cx, .day-card.cx { opacity: .5; outline: 2px solid #E03131; outline-offset: -2px; background: color-mix(in srgb, var(--cc, #000) 5%, #fff); }
+.ev.cx .ev-name { text-decoration: line-through; }

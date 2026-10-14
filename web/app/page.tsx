@@ -42,12 +42,12 @@ export default function YourWeek() {
         {!loaded ? <p className="empty">Loading</p> : list.length === 0 ? <p className="empty">No sessions.</p> : list.map((o) => {
           const done = !!o.session_id;
           return (
-            <button key={entryKey(o)} type="button" className={`day-card${done ? ' done' : ''}`}
+            <button key={entryKey(o)} type="button" className={`day-card${done ? ' done' : ''}${o.outcome === 'cancelled_in_time' ? ' cx' : ''}`}
                     style={{ ['--cc' as string]: colour } as React.CSSProperties} onClick={() => setOpenKey(entryKey(o))}>
               <div className="dc-time">{timeRange(o.start_time, o.minutes) || 'No time set'}</div>
               <div className="dc-name">{o.players ?? FORMAT_LABEL[o.format]}</div>
               <div className="dc-sub">{FORMAT_LABEL[o.format]}{o.location ? `, ${o.location}` : ''}</div>
-              <span className="dc-state">{done ? '✓ Documented' : o.prep ? '✓ Planned' : day === today ? 'Plan or document' : 'Plan session'}</span>
+              <span className="dc-state">{o.outcome === 'cancelled_in_time' ? '✕ Cancelled' : done ? '✓ Documented' : o.prep ? '✓ Planned' : day === today ? 'Plan or document' : 'Plan session'}</span>
             </button>
           );
         })}

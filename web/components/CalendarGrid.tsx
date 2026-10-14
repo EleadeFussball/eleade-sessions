@@ -136,7 +136,7 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
           {days.map((d) => (
             <div key={d} className="ad-col">
               {untimed.filter((o) => o.session_date === d).map((o) => (
-                <button key={entryKey(o)} type="button" style={cc(o.coach_id)} className={`ev ev-${o.kind} flat${o.session_id ? ' done' : ''}${selected === entryKey(o) ? ' on' : ''}`}
+                <button key={entryKey(o)} type="button" style={cc(o.coach_id)} className={`ev ev-${o.kind} flat${o.session_id ? ' done' : ''}${o.outcome === 'cancelled_in_time' ? ' cx' : ''}${selected === entryKey(o) ? ' on' : ''}`}
                         onClick={() => onPickEntry(o)} title={`${o.players} · ${FORMAT_LABEL[o.format]}`}>
                   {o.players}
                 </button>
@@ -172,7 +172,7 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
                 return (
                   <button
                     key={key} type="button" data-ev={key}
-                    className={`ev ev-${o.kind}${done ? ' done' : ''}${selected === key ? ' on' : ''}${dragging ? ' dragging' : ''}${armed === key ? ' armed' : ''}`}
+                    className={`ev ev-${o.kind}${done ? ' done' : ''}${o.outcome === 'cancelled_in_time' ? ' cx' : ''}${selected === key ? ' on' : ''}${dragging ? ' dragging' : ''}${armed === key ? ' armed' : ''}`}
                     style={{
                       ...cc(o.coach_id),
                       top: ((startM - from) / 60) * HOUR + 1,
@@ -237,7 +237,7 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
                       window.addEventListener('pointercancel', onUp);
                     }}
                   >
-                    <span className="ev-time">{done && '✓ '}{dragging ? timeOf(drag!.mins) : hhmm(o.start_time)}</span>
+                    <span className="ev-time">{o.outcome === 'cancelled_in_time' ? '✕ ' : done && '✓ '}{dragging ? timeOf(drag!.mins) : hhmm(o.start_time)}</span>
                     <span className="ev-name">{o.players}</span>
                     {completable && onComplete ? (
                       <span role="button" tabIndex={0} className={o.minutes < 60 ? 'ev-done corner' : 'ev-done'}

@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { errorText } from '@/lib/supabase';
+import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { addDays, fmtDate, todayISO } from '@/lib/dates';
 import { normaliseTime } from '@/lib/time';
@@ -56,6 +56,14 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
     if (error) setErr(errorText(error)); else { setMode(''); onDone(); }
   }
 
+  async function undoCancel() {
+    if (!o.session_id) return;
+    setBusy(true); setErr('');
+    const { error } = await supabase.rpc('undo_cancellation', { p_session_id: o.session_id });
+    setBusy(false);
+    if (error) setErr(errorText(error)); else onDone();
+  }
+
   async function remove() {
     if (!window.confirm('Take this session off the calendar? Nobody is charged.')) return;
     setBusy(true); setErr('');
@@ -80,7 +88,10 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
       {o.prep && mode !== 'plan' && <div className="prep"><span className="prep-label">Plan</span> {o.prep}</div>}
 
       {o.session_id && mode === '' && canEditSession(o, isAdmin, coach?.id) && (
-        <div className="row mt">
+        <div className="row mt" style={{ flexWrap: 'wrap' }}>
+          {o.outcome === 'cancelled_in_time' && mine && (
+            <button type="button" className="btn small" disabled={busy} onClick={undoCancel}>Undo cancellation</button>
+          )}
           <button type="button" className="btn small ghost" onClick={() => setMode('edit')}>Edit session</button>
         </div>
       )}
@@ -91,7 +102,7 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
         <div className="row mt" style={{ flexWrap: 'wrap' }}>
           <button type="button" className="btn small ghost" onClick={() => setMode('plan')}>{o.prep ? 'Edit plan' : 'Plan session'}</button>
           <button type="button" className="btn small" disabled={!completable} onClick={() => setMode('done')}>Completed</button>
-          <button type="button" className="btn small ghost" disabled={future} onClick={() => setMode('cancel')}>Cancelled</button>
+          <button type="button" className="btn small ghost" onClick={() => setMode('cancel')}>{future ? 'Cancel in advance' : 'Cancelled'}</button>
           <button type="button" className="btn small ghost" onClick={() => setMode('move')}>Move</button>
           {o.kind === 'once' && <button type="button" className="btn small ghost" disabled={busy} onClick={remove}>Remove</button>}
         </div>
@@ -138,12 +149,13 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
       {mode === 'cancel' && (
         <div className="mt">
           <div className="seg outcomes" style={{ marginBottom: 12 }}>
-            {(['cancelled_in_time', 'cancelled_late', 'no_show'] as Outcome[]).map((k) => (
+            {((future ? ['cancelled_in_time', 'cancelled_late'] : ['cancelled_in_time', 'cancelled_late', 'no_show']) as Outcome[]).map((k) => (
               <button key={k} type="button" aria-pressed={cancelKind === k} onClick={() => setCancelKind(k)}>
                 {OUTCOME_LABEL[k]}<small>{k === 'cancelled_in_time' ? '12+ hours notice: free' : 'Uses a credit, coach paid'}</small>
               </button>
             ))}
           </div>
+          {cancelKind === 'cancelled_in_time' && <p className="hint">The session stays in the calendar, faded with a red outline. No credit is used and it is not on your invoice. You can undo it.</p>}
           <label className="field"><span>Note <span className="hint">(optional)</span></span>
             <textarea value={obs} onChange={(e) => setObs(e.target.value)} placeholder="e.g. Sick, parent messaged at 7am" style={{ minHeight: 56 }} /></label>
           <div className="row">
