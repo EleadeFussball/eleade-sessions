@@ -1068,6 +1068,16 @@ do $$ begin
 end $$;
 
 reset role;
+
+-- ---------- 2:1 price per player ----------
+reset role;
+update public.players set pair_price = 80 where id = '00000000-0000-0000-0000-0000000000b4';
+select pg_temp.check('a 2:1 is charged at the player''s 2:1 price, a 1:1 at the 1:1 price, defaults otherwise',
+  public.player_price('00000000-0000-0000-0000-0000000000b4', '2:1') = 80
+  and public.player_price('00000000-0000-0000-0000-0000000000b4', '1:1') = 130
+  and public.player_price('00000000-0000-0000-0000-0000000000b1', '2:1') = 75);
+
+reset role;
 -- ---------- Player Name on the payment link ----------
 reset role;
 insert into public.players (id, name) values ('00000000-0000-0000-0000-0000000e00a1', 'Named Nina');

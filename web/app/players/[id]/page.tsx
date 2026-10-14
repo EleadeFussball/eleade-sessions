@@ -15,7 +15,7 @@ import { PAYMENT_LABEL, type PaymentMethod, type PlayerBalance, type SessionRow 
 type Player = {
   id: string; name: string; family: string | null; billing_model: 'package' | 'pay_per_session';
   session_price: number | null; main_coach_id: string | null; active: boolean; opening_confirmed: boolean; profile_notes: string | null;
-  created_by: string | null; monthly_recurring?: boolean;
+  created_by: string | null; monthly_recurring?: boolean; pair_price?: number | null;
 };
 type Ledger = { id: string; kind: string; sessions_delta: number; analyses_delta: number; pairs_delta: number; package_name: string | null;
   amount_paid: number | null; reason: string; effective_date: string; expires_on: string | null; player_id: string;
@@ -132,7 +132,7 @@ export default function PlayerPage() {
           <div className="scoreboard">
             <div><div className={`big ${cls}`}>{num(bal.sessions_left)}</div><div className="cap">sessions left</div></div>
             {bal.pairs_left !== null && bal.pairs_left !== undefined && (
-              <div><div className="big">{num(bal.pairs_left)}</div><div className="cap">2:1 sessions left</div></div>
+              <div><div className={`big${Number(bal.pairs_left) < 0 ? ' out' : ''}`}>{num(bal.pairs_left)}</div><div className="cap">{Number(bal.pairs_left) < 0 ? '2:1 sessions to pay' : '2:1 sessions left'}</div></div>
             )}
             <div><div className="big">{num(bal.analyses_left)}</div><div className="cap">game analyses left</div></div>
           </div>
@@ -151,6 +151,9 @@ export default function PlayerPage() {
         <div className="notice">Pays per session by weekly bank transfer{p.session_price ? `, ${money(p.session_price)} a session` : ''}. No credits to track.</div>
       )}
 
+      {isAdmin && (
+        <p className="hint">Prices ex GST: 1:1 {money(p.session_price ?? 120)} a session, 2:1 {money(p.pair_price ?? 75)} per player a session{p.session_price === null && p.pair_price == null ? ' (standard)' : ''}.</p>
+      )}
       {isAdmin && <PaymentSettings p={p} onSaved={load} />}
 
       {p.profile_notes && <div className="notice ok"><strong>Arrangement:</strong> {p.profile_notes}</div>}
@@ -525,15 +528,16 @@ function RecordPackage({ playerId, name, billing, onSaved }: { playerId: string;
 function PaymentSettings({ p, onSaved }: { p: Player; onSaved: () => void }) {
   const [model, setModel] = useState(p.billing_model);
   const [price, setPrice] = useState(p.session_price?.toString() ?? '');
+  const [pairPrice, setPairPrice] = useState(p.pair_price?.toString() ?? '');
   const [recurring, setRecurring] = useState(!!p.monthly_recurring);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
-  useEffect(() => { setModel(p.billing_model); setPrice(p.session_price?.toString() ?? ''); setRecurring(!!p.monthly_recurring); }, [p.billing_model, p.session_price, p.monthly_recurring]);
+  useEffect(() => { setModel(p.billing_model); setPrice(p.session_price?.toString() ?? ''); setPairPrice(p.pair_price?.toString() ?? ''); setRecurring(!!p.monthly_recurring); }, [p.billing_model, p.session_price, p.pair_price, p.monthly_recurring]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault(); setErr(''); setMsg('');
     const { error } = await supabase.from('players').update({
-      billing_model: model, session_price: model === 'pay_per_session' && price ? Number(price) : null,
+      billing_model: model, session_price: price.trim() ? Number(price) : null, pair_price: pairPrice.trim() ? Number(pairPrice) : null,
       monthly_recurring: model === 'package' && recurring,
     }).eq('id', p.id);
     if (error) setErr(errorText(error)); else { setMsg('Payment settings saved.'); onSaved(); }
@@ -558,10 +562,15 @@ function PaymentSettings({ p, onSaved }: { p: Player; onSaved: () => void }) {
         ) : (
           <>
             <p className="hint"><strong>Pays weekly:</strong> no credits. Sessions are added up each week and paid by bank transfer, and you mark the week as paid on the Admin page.</p>
-            <label className="field"><span>Price per session, ex GST <span className="hint">(blank uses the default)</span></span>
-              <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} /></label>
           </>
         )}
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <label className="field" style={{ flex: '1 1 140px' }}><span>1:1 price per session, ex GST</span>
+            <input type="number" inputMode="decimal" value={price} placeholder="120" onChange={(e) => setPrice(e.target.value)} /></label>
+          <label className="field" style={{ flex: '1 1 140px' }}><span>2:1 price per session, per player, ex GST</span>
+            <input type="number" inputMode="decimal" value={pairPrice} placeholder="75" onChange={(e) => setPairPrice(e.target.value)} /></label>
+        </div>
+        <p className="hint">Leave empty for the standard prices ($120 for 1:1, $75 per player for 2:1). Used for weekly payers, sessions paid on their own and cash a coach keeps.</p>
         <p className="hint">Single sessions and assessments can also be paid one by one: the coach picks Stripe link, bank transfer or cash when logging the session. Changing the setting keeps all credits and history. Recording a package for a weekly player switches them to a package.</p>
         {msg && <div className="notice ok">{msg}</div>}
         {err && <div className="notice err">{err}</div>}
