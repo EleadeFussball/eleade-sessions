@@ -25,7 +25,7 @@ insert into public.locations (name, aliases, address, place_id) values
   ('Moore Park', '{"Moore Park Synthetic Field"}', 'Lang Rd, Moore Park NSW 2021', 'ChIJe2Wu8_yxEmsR0i-BuniVspM'),
   ('Rowland Park', '{Rowland,Rownad}', 'Bunnerong Rd, Daceyville NSW 2032', 'ChIJUWuIYYGxEmsRMCny-Wh9AQ8'),
   ('Heffron Park', '{Heffron}', '439 Bunnerong Rd, Maroubra NSW 2036', 'ChIJyz-4fGKxEmsRzrLVY5Mstds'),
-  ('Matraville', '{Matra,Mattraville}', null, null),
+  ('Matraville', '{Matra,Mattraville,"Matraville Sports High School"}', 'Matraville Sports High School, Anzac Parade, Chifley NSW 2036', 'ChIJgyHYbuGzEmsRLqUJJm2mR6c'),
   ('Allan Border Oval', '{"Allan Border"}', 'The Crescent, Mosman NSW 2088', 'ChIJrzrxIxusEmsRapWZthXVx5Q'),
   ('Village Green UNSW', '{"Village Green"}', 'University Mall, UNSW, Kensington NSW 2033', 'ChIJEZi59YuxEmsREWmDN_gQwbY'),
   ('Pioneers Park', '{Pioneers,"Pionners Park"}', '1160 Anzac Parade, Malabar NSW 2036', 'ChIJBUPL-sKzEmsRmTeXmzf5DDQ'),
@@ -39,6 +39,9 @@ insert into public.locations (name, aliases, address, place_id) values
   ('Christison Park', '{}', 'Old South Head Rd, Vaucluse NSW 2030', 'ChIJEW7KavesEmsRhvmpXwgFZqI'),
   ('Coral Sea Park', '{"Coral Sea"}', '53 Yorktown Parade, Maroubra NSW 2035', 'ChIJrZjwItCzEmsRkDLy-Wh9AQ8')
 on conflict (name) do nothing;
+-- Matraville: Jan's pin for the access to the school field
+update public.locations set maps_url = 'https://maps.app.goo.gl/ZtRGtbWWWaPo88129'
+ where name = 'Matraville' and maps_url is null;
 
 -- ---------- enquiries: every coach ----------
 alter table public.enquiries add column if not exists preferred_location text;
