@@ -8,6 +8,7 @@ import { PlayerPicker } from '@/components/PlayerPicker';
 import { PlannedSessions } from '@/components/PlannedSessions';
 import { StripeNote, useUnusedPayments } from '@/components/StripeNote';
 import { useLastLocation } from '@/lib/useLastLocation';
+import { findPitch, loadPitches } from '@/lib/locations';
 import { normaliseTime } from '@/lib/time';
 import { todayISO, addDays, fmtDate, num } from '@/lib/dates';
 import { FORMAT_LABEL, OUTCOME_LABEL, OUTCOME_HINT, MAX_PLAYERS, PAYMENT_LABEL, placeField, type Format, type Outcome, type PaymentMethod, type PlayerBalance } from '@/lib/types';
@@ -66,7 +67,14 @@ export default function LogPage() {
           const l = (r.location ?? '').trim();
           if (l) counts.set(l, (counts.get(l) ?? 0) + 1);
         });
-        setLocations([...counts.entries()].sort((a, b) => b[1] - a[1]).map(([l]) => l).slice(0, 30));
+        const used = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([l]) => l);
+        loadPitches().then((pitches) => {
+          const names = pitches.filter((x) => x.active).map((x) => x.name);
+          // saved pitches first (most used first), then anything else typed before that is not a known pitch
+          const known = (l: string) => findPitch(l, pitches);
+          const ranked = names.sort((a, b) => used.filter((u) => known(u)?.name === b).length - used.filter((u) => known(u)?.name === a).length);
+          setLocations([...ranked, ...used.filter((u) => !known(u))].slice(0, 30));
+        });
       });
   }, []);
 

@@ -733,13 +733,8 @@ select pg_temp.check('a repeated submission is ignored',
   and (select count(*) from public.enquiries) = 1);
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
-select pg_temp.check('a coach does not see enquiries that are not theirs', (select count(*) from public.enquiries) = 0);
+select pg_temp.check('every coach sees new enquiries', (select count(*) from public.enquiries) = 1);
 do $$ begin
-  begin
-    perform public.assign_enquiry((select id from public.enquiries limit 1), '00000000-0000-0000-0000-0000000000c2');
-    perform pg_temp.check('a coach cannot assign enquiries', false);
-  exception when others then perform pg_temp.check('a coach cannot assign enquiries', true);
-  end;
   begin
     perform public.rotate_enquiry_key();
     perform pg_temp.check('a coach cannot create the website key', false);
@@ -766,14 +761,14 @@ select public.enquiry_book(:'enq', public.today_sydney() + 3, time '17:00', 60, 
 select pg_temp.check('booking again moves the same assessment',
   (select count(*) from public.bookings where id = :'enq_bk' and session_date = public.today_sydney() + 3 and cancelled_at is null) = 1);
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a3';
-do $$ begin
-  begin
-    perform public.enquiry_book((select id from public.enquiries limit 1), public.today_sydney() + 4, time '10:00', 60, null);
-    perform pg_temp.check('another coach cannot book it', false);
-  exception when others then perform pg_temp.check('another coach cannot book it', true);
-  end;
-end $$;
-select pg_temp.check('another coach does not see the enquiry', (select count(*) from public.enquiries) = 0);
+select public.enquiry_book(:'enq', public.today_sydney() + 4, time '10:00', 60, 'Gunyama Park');
+select pg_temp.check('another coach (for example Tyler) can move the assessment',
+  (select session_date = public.today_sydney() + 4 and location = 'Gunyama Park' and coach_id = '00000000-0000-0000-0000-0000000000c2' from public.bookings where id = :'enq_bk'));
+select public.assign_enquiry(:'enq', '00000000-0000-0000-0000-0000000000c3');
+select pg_temp.check('reassigning moves the planned assessment to the new coach',
+  (select b.coach_id = '00000000-0000-0000-0000-0000000000c3' and b.location = 'Gunyama Park' from public.enquiries e join public.bookings b on b.id = e.booking_id where e.id = :'enq')
+  and (select cancelled_at is not null from public.bookings where id = :'enq_bk'));
+select public.assign_enquiry(:'enq', '00000000-0000-0000-0000-0000000000c2');
 
 
 -- ---------- last location ----------
@@ -791,9 +786,11 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
 select public.add_enquiry('{"first_name":"Manual","last_name":"Entry","parent_name":"Mum Entry","parent_phone":"0411 222 333","parent_email":"mum@test"}'::jsonb) as man \gset
 select pg_temp.check('Jan can add an enquiry by hand',
   (select parent_phone = '0411 222 333' and parent_email = 'mum@test' and source = 'manual' from public.enquiries where id = :'man'));
-select public.enquiry_called(:'man', 'Keen, wants Wednesdays');
-select pg_temp.check('Jan records the call with a note',
-  (select called_at is not null and note = 'Keen, wants Wednesdays' from public.enquiries where id = :'man'));
+select public.enquiry_called(:'man', 'Keen, wants Wednesdays', 'Queens Park', 'Wed after 4pm');
+select pg_temp.check('the call is recorded with a note, pitch and ideal times',
+  (select called_at is not null and note = 'Keen, wants Wednesdays' and preferred_location = 'Queens Park' and ideal_times = 'Wed after 4pm' from public.enquiries where id = :'man'));
+select public.enquiry_whatsapp_group(:'man');
+select pg_temp.check('the WhatsApp group is ticked off', (select whatsapp_group_at is not null from public.enquiries where id = :'man'));
 select public.assign_enquiry(:'man', '00000000-0000-0000-0000-0000000000c2');
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
 select public.set_enquiry_outcome(:'man', 'handover');
@@ -801,17 +798,27 @@ select pg_temp.check('the coach hands the family over to Jan after the assessmen
   (select outcome = 'handover' and status = 'done' from public.enquiries where id = :'man'));
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a3';
 do $$ begin
+  null;
+end $$;
+select pg_temp.check('any coach can add an enquiry by hand', public.add_enquiry('{"first_name":"Phone","last_name":"Call"}'::jsonb) is not null);
+select pg_temp.check('coaches see the pitch list with addresses', (select count(*) >= 15 and count(*) filter (where place_id is not null) >= 15 from public.locations));
+do $$ begin
   begin
-    perform public.set_enquiry_outcome((select id from public.enquiries where source = 'manual'), 'package5');
-    perform pg_temp.check('another coach cannot record the outcome', false);
-  exception when others then perform pg_temp.check('another coach cannot record the outcome', true);
-  end;
-  begin
-    perform public.add_enquiry('{"first_name":"Sneaky"}'::jsonb);
-    perform pg_temp.check('a coach cannot add an enquiry', false);
-  exception when others then perform pg_temp.check('a coach cannot add an enquiry', true);
+    insert into public.locations (name) values ('Sneaky Park');
+    perform pg_temp.check('only Jan edits the pitch list', false);
+  exception when others then perform pg_temp.check('only Jan edits the pitch list', true);
   end;
 end $$;
+set role anon;
+do $$ declare n int; begin
+  begin select count(*) into n from public.enquiries; perform set_config('test.anon_enq', n::text, false);
+  exception when others then perform set_config('test.anon_enq', 'denied', false); end;
+end $$;
+reset role;
+select pg_temp.check('strangers cannot see enquiries', current_setting('test.anon_enq') in ('denied', '0'));
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a9';
+select pg_temp.check('a signed-in non-coach sees no enquiries', (select count(*) from public.enquiries) = 0);
 
 -- ---------- cash kept by the coach is settled on the invoice ----------
 reset role;

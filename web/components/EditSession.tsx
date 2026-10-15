@@ -132,7 +132,7 @@ export function EditSession({ sessionId, onDone, onCancel, onDelete }:
           </div>
         </div>
       )}
-      <label className="field"><span>{placeField(format).label}</span><input type="text" value={location} placeholder={placeField(format).placeholder} onChange={(e) => setLocation(e.target.value)} /></label>
+      <label className="field"><span>{placeField(format).label}</span><input type="text" list={format === 'analysis' ? undefined : 'pitches'} value={location} placeholder={placeField(format).placeholder} onChange={(e) => setLocation(e.target.value)} /></label>
       <label className="field"><span>What you worked on</span><textarea value={topic} onChange={(e) => setTopic(e.target.value)} /></label>
       <label className="field"><span>How it went</span><textarea value={obs} onChange={(e) => setObs(e.target.value)} /></label>
       <label className="field"><span>Next session</span><textarea value={improve} onChange={(e) => setImprove(e.target.value)} style={{ minHeight: 64 }} /></label>

@@ -180,7 +180,7 @@ export function LogFlow({ o, onDone, onCancel }: { o: ScheduleEntry; onDone: () 
             </div>
           </div>
           <label className="field"><span>{place.label}</span>
-            <input type="text" value={location} placeholder={place.placeholder} onChange={(e) => setLocation(e.target.value)} /></label>
+            <input type="text" list={format === 'analysis' ? undefined : 'pitches'} value={location} placeholder={place.placeholder} onChange={(e) => setLocation(e.target.value)} /></label>
           <p className="hint">To change the day or start time, go Back and use Move.</p>
         </details>
       )}

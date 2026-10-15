@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth';
 import type { Coach } from '@/lib/types';
 import { digits, validAbn } from '@/lib/bank';
 import { EnquiryWebhook } from '@/components/EnquiryWebhook';
+import { PitchManager } from '@/components/PitchManager';
 
 type Rates = { coach_id: string; one_to_one: number | null; two_to_one: number; four_to_one: number; analysis: number; testing: number; assessment: number | null };
 const RATE_FIELDS: [keyof Omit<Rates, 'coach_id'>, string][] = [
@@ -44,6 +45,7 @@ export default function TeamPage() {
       <ul className="list">
         {coaches.map((c) => <CoachRow key={c.id} c={c} r={rates[c.id]} onSaved={async (m) => { setMsg(m); setErr(''); await refreshCoaches(); load(); }} onError={setErr} />)}
       </ul>
+      <PitchManager />
       <BusinessDetails />
       <EnquiryWebhook />
       <details className="panel">

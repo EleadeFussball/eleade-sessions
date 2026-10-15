@@ -5,6 +5,7 @@ import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { addDays, fmtDate, money, todayISO } from '@/lib/dates';
 import { normaliseTime } from '@/lib/time';
+import { pitchLines, usePitches } from '@/lib/locations';
 
 type Status = 'new' | 'assigned' | 'contacted' | 'booked' | 'done' | 'declined';
 type Outcome = 'package5' | 'package10' | 'handover' | 'not_continuing';
@@ -14,7 +15,8 @@ type Enquiry = {
   email: string | null; phone: string | null; dob: string | null; gender: string | null; age_group: string | null;
   position: string | null; foot: string | null; club: string | null; heard_from: string | null; message: string | null;
   player_type: string | null; status: Status; coach_id: string | null; player_id: string | null; booking_id: string | null;
-  note: string | null; called_at: string | null; outcome: Outcome | null; outcome_at: string | null;
+  note: string | null; called_at: string | null; called_by: string | null; outcome: Outcome | null; outcome_at: string | null;
+  preferred_location: string | null; ideal_times: string | null; whatsapp_group_at: string | null;
   raw: { answers?: [string, string][] } | null;
   bookings: { session_date: string; start_time: string; minutes: number; location: string | null; session_id: string | null; cancelled_at: string | null } | null;
 };
@@ -86,16 +88,14 @@ export default function EnquiriesPage() {
     <>
       <h1>Enquiries</h1>
       <p className="muted">
-        {isAdmin
-          ? 'Expressions of interest from the website. Review the form, call the parents, assign a coach and book the assessment. The app prepares the payment link and the follow-up message.'
-          : 'Enquiries Jan has assigned to you. Send the payment link once the assessment is booked, and report back after the session.'}
+        Expressions of interest from the website. Call the parents, note the best pitch and times, assign a coach, set up the WhatsApp group and book the assessment. The app prepares every message, including the pitch with its Google Maps link.
       </p>
       <div className="seg" style={{ marginBottom: 12 }}>
         {tabs.map((k) => (
           <button key={k} type="button" aria-pressed={tab === k} onClick={() => setTab(k)}>{tabLabel[k]} ({groups[k].length})</button>
         ))}
       </div>
-      {isAdmin && (
+      {(
         <div style={{ marginBottom: 12 }}>
           {adding
             ? <AddEnquiry onClose={() => setAdding(false)} onSaved={() => { setAdding(false); setTab('todo'); load(); }} />
@@ -104,7 +104,7 @@ export default function EnquiriesPage() {
       )}
       {loading ? <p className="empty">Loading</p> : shown.length === 0 ? (
         <p className="empty">
-          {tab === 'todo' ? (isAdmin ? 'No open enquiries. New ones from the website appear here.' : 'Nothing assigned to you right now.')
+          {tab === 'todo' ? 'No open enquiries. New ones from the website appear here.'
             : tab === 'sales' ? 'No sales calls waiting. Players handed over after their assessment appear here.' : 'Nothing here.'}
         </p>
       ) : shown.map((r) => (
@@ -155,12 +155,15 @@ function EnquiryCard({ e, link, payment, notes, onChanged, defaultOpen }: {
   e: Enquiry; link: string; payment?: Paid; notes?: Notes; onChanged: () => void; defaultOpen: boolean;
 }) {
   const { isAdmin, coaches } = useAuth();
+  const pitches = usePitches();
   const [open, setOpen] = useState(defaultOpen || e.status === 'new');
+  const [prefLoc, setPrefLoc] = useState(e.preferred_location ?? '');
+  const [times, setTimes] = useState(e.ideal_times ?? '');
   const [coachId, setCoachId] = useState(e.coach_id ?? '');
   const [date, setDate] = useState(e.bookings?.session_date ?? addDays(todayISO(), 2));
   const [time, setTime] = useState(e.bookings?.start_time?.slice(0, 5) ?? '');
   const [minutes, setMinutes] = useState(e.bookings?.minutes ?? 60);
-  const [location, setLocation] = useState(e.bookings?.location ?? '');
+  const [location, setLocation] = useState(e.bookings?.location ?? e.preferred_location ?? '');
   const [callNote, setCallNote] = useState(e.note ?? '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -175,18 +178,30 @@ function EnquiryCard({ e, link, payment, notes, onChanged, defaultOpen }: {
   const mail = e.parent_email || e.email || '';
   const parentFirst = (e.parent_name ?? '').split(' ')[0];
   const url = link && e.player_id ? `${link}${link.includes('?') ? '&' : '?'}client_reference_id=assessment_${e.player_id}` : '';
-  const canWork = isAdmin || !!e.coach_id;
+  const canWork = true;
+  const caller = coaches.find((c) => c.user_id === e.called_by);
   const finished = e.status === 'done' || e.status === 'declined';
 
-  const when = booked && e.bookings
-    ? `${fmtDate(e.bookings.session_date, true)} at ${e.bookings.start_time.slice(0, 5)}${e.bookings.location ? `, ${e.bookings.location}` : ''}`
-    : '';
+  const when = booked && e.bookings ? `${fmtDate(e.bookings.session_date, true)} at ${e.bookings.start_time.slice(0, 5)}` : '';
   const payMessage = [
     `Hi${parentFirst ? ` ${parentFirst}` : ''} 👋 Thank you for speaking with us.`,
     `${first}'s assessment with ${coach ? coach.name : 'our coach'} is booked for ${when || 'the agreed time'}.`,
+    pitchLines(e.bookings?.location, pitches),
     url ? `To confirm the booking, please pay the assessment fee ($130 + GST) here:\n${url}` : '',
     'See you there! ⚽',
   ].filter(Boolean).join('\n\n');
+
+  const groupName = `Eleade | ${player}`;
+  const coachFirst = coach?.name.split(' ')[0] ?? '';
+  const welcomeMessage = [
+    `Hi${parentFirst ? ` ${parentFirst}` : ''} 👋 Welcome to Eleade!`,
+    `This is ${first}'s group with ${coach ? `${coach.name}, ${first}'s coach` : 'our coach'}. We will use it to organise sessions and share updates.`,
+    pitchLines(e.preferred_location, pitches),
+    e.ideal_times ? `🕒 Times that suit you: ${e.ideal_times}` : '',
+    `${coachFirst || 'Your coach'} will confirm the first session here shortly. ⚽`,
+  ].filter(Boolean).join('\n\n');
+  const [welcome, setWelcome] = useState(welcomeMessage);
+  useEffect(() => { setWelcome(welcomeMessage); }, [welcomeMessage]);
   const [pay, setPay] = useState(payMessage);
   useEffect(() => { setPay(payMessage); }, [payMessage]);
 
@@ -211,7 +226,8 @@ function EnquiryCard({ e, link, payment, notes, onChanged, defaultOpen }: {
     return run(() => supabase.rpc('assign_enquiry', { p_id: e.id, p_coach_id: coachId }));
   };
   const setStatus = (status: Status) => run(() => supabase.rpc('set_enquiry_status', { p_id: e.id, p_status: status }));
-  const called = () => run(() => supabase.rpc('enquiry_called', { p_id: e.id, p_note: callNote }));
+  const called = () => run(() => supabase.rpc('enquiry_called', { p_id: e.id, p_note: callNote, p_location: prefLoc, p_times: times }));
+  const groupDone = (done: boolean) => run(() => supabase.rpc('enquiry_whatsapp_group', { p_id: e.id, p_done: done }));
   const outcome = (o: Outcome) => run(() => supabase.rpc('set_enquiry_outcome', { p_id: e.id, p_outcome: o }));
   async function book() {
     const t = normaliseTime(time);
@@ -264,19 +280,25 @@ function EnquiryCard({ e, link, payment, notes, onChanged, defaultOpen }: {
                     <a className="btn small ghost" target="_blank" rel="noreferrer" href={`https://wa.me/${waNumber(phone)}`}>WhatsApp</a>
                   </div>
                 )}
-                {e.called_at && <p className="hint">Call done on {fmtDate(e.called_at.slice(0, 10))}.</p>}
-                {isAdmin ? (
-                  <>
-                    <textarea value={callNote} onChange={(ev) => setCallNote(ev.target.value)} aria-label="Notes from the call"
-                      placeholder="Notes from the call: goals, availability, what you explained" style={{ minHeight: 70, marginTop: 8 }} />
-                    <button type="button" className="btn small mt" disabled={busy} onClick={called}>{e.called_at ? 'Update call note' : 'Call done'}</button>
-                  </>
-                ) : e.note ? <p>{e.note}</p> : null}
+                {e.called_at && <p className="hint">Call done on {fmtDate(e.called_at.slice(0, 10))}{caller ? ` by ${caller.name}` : ''}.</p>}
+                <div className="row mt" style={{ flexWrap: 'wrap' }}>
+                  <label className="field" style={{ flex: '1 1 170px' }}><span>Best pitch for the family</span>
+                    <select value={prefLoc} onChange={(ev) => setPrefLoc(ev.target.value)}>
+                      <option value="">Choose a pitch</option>
+                      {pitches.filter((p) => p.active || p.name === prefLoc).map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                      {prefLoc && !pitches.some((p) => p.name === prefLoc) && <option value={prefLoc}>{prefLoc}</option>}
+                    </select></label>
+                  <label className="field" style={{ flex: '1 1 170px' }}><span>Ideal times</span>
+                    <input type="text" value={times} onChange={(ev) => setTimes(ev.target.value)} placeholder="e.g. Tue or Thu after 4pm" /></label>
+                </div>
+                <textarea value={callNote} onChange={(ev) => setCallNote(ev.target.value)} aria-label="Notes from the call"
+                  placeholder="Notes from the call: goals, experience, what you explained" style={{ minHeight: 70 }} />
+                <button type="button" className="btn small mt" disabled={busy} onClick={called}>{e.called_at ? 'Update call notes' : 'Call done, save notes'}</button>
               </div>
 
               <div className="step">
-                <h4>2. Coach and assessment time</h4>
-                {isAdmin ? (
+                <h4>2. Assign a coach</h4>
+                {(
                   <div className="row" style={{ flexWrap: 'wrap' }}>
                     <select value={coachId} onChange={(ev) => setCoachId(ev.target.value)} aria-label="Coach" style={{ flex: '1 1 160px' }}>
                       <option value="">Choose a coach</option>
@@ -286,8 +308,37 @@ function EnquiryCard({ e, link, payment, notes, onChanged, defaultOpen }: {
                       {e.coach_id ? 'Change coach' : 'Assign coach'}
                     </button>
                   </div>
-                ) : <p>{coach?.name ?? 'Not assigned'}</p>}
-                {!e.coach_id && isAdmin && <p className="hint">Assigning creates the player in the app. Do this once the call went well.</p>}
+                )}
+                {!e.coach_id && <p className="hint">Assigning creates the player in the app and puts the assessment in that coach&apos;s calendar. Do this once the call went well.</p>}
+              </div>
+
+              {e.coach_id && (
+                <div className="step">
+                  <h4>3. WhatsApp group</h4>
+                  {e.whatsapp_group_at ? (
+                    <p><span className="tag turf">Group created</span> <span className="hint">on {fmtDate(e.whatsapp_group_at.slice(0, 10))}.</span>{' '}
+                      <button type="button" className="linkbtn" disabled={busy} onClick={() => groupDone(false)}>Undo</button></p>
+                  ) : (
+                    <>
+                      <p className="hint">In WhatsApp: New group, add {e.parent_name ? parentFirst : 'the parent'}{phone ? ` (${phone})` : ''} and {coach?.name ?? 'the coach'}, name it as below, then paste the welcome message.</p>
+                      <div className="row" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+                        <code style={{ padding: '6px 8px', background: 'var(--turf-soft)', borderRadius: 6 }}>{groupName}</code>
+                        <button type="button" className="btn small ghost" onClick={() => copy(groupName, 'group')}>{copied === 'group' ? 'Copied' : 'Copy name'}</button>
+                      </div>
+                      <textarea className="mt" value={welcome} onChange={(ev) => setWelcome(ev.target.value)} style={{ minHeight: 170 }} aria-label="Welcome message for the WhatsApp group" />
+                      {!e.preferred_location && <p className="hint">Save the best pitch in step 1 to include it with its Google Maps link.</p>}
+                      <div className="row mt" style={{ flexWrap: 'wrap' }}>
+                        <button type="button" className="btn small ghost" onClick={() => copy(welcome, 'welcome')}>{copied === 'welcome' ? 'Copied' : 'Copy message'}</button>
+                        <button type="button" className="btn small" disabled={busy} onClick={() => groupDone(true)}>Group created</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              <div className="step">
+                <h4>{e.coach_id ? '4' : '3'}. Assessment time</h4>
+                {!e.coach_id && <p className="hint">Assign a coach first.</p>}
                 {canWork && e.coach_id && e.player_id && !logged && (
                   <>
                     {booked && <p><span className="tag turf">Booked</span> {when}. <Link href="/calendar">Open calendar</Link></p>}
@@ -297,8 +348,8 @@ function EnquiryCard({ e, link, payment, notes, onChanged, defaultOpen }: {
                       <label className="field" style={{ flex: '0 0 100px' }}><span>Start</span>
                         <input type="text" inputMode="numeric" value={time} placeholder="e.g. 430" onChange={(ev) => setTime(ev.target.value)}
                                onBlur={() => setTime(normaliseTime(time) || time)} /></label>
-                      <label className="field" style={{ flex: '1 1 150px' }}><span>Location</span>
-                        <input type="text" value={location} onChange={(ev) => setLocation(ev.target.value)} placeholder="e.g. Moore Park" /></label>
+                      <label className="field" style={{ flex: '1 1 150px' }}><span>Pitch</span>
+                        <input type="text" list="pitches" value={location} onChange={(ev) => setLocation(ev.target.value)} placeholder="Choose or type a pitch" /></label>
                     </div>
                     <button type="button" className="btn small" disabled={busy} onClick={book}>{booked ? 'Move in calendar' : 'Add to calendar'}</button>
                     <p className="hint">It appears in {coach?.name ?? 'the coach'}&apos;s calendar. After the session, tap Completed there.</p>
@@ -308,7 +359,7 @@ function EnquiryCard({ e, link, payment, notes, onChanged, defaultOpen }: {
 
               {canWork && e.coach_id && e.player_id && (
                 <div className="step">
-                  <h4>3. Payment link</h4>
+                  <h4>5. Payment link</h4>
                   {!booked && !logged ? <p className="hint">Book the assessment first. The message then includes the day, time and place.</p>
                     : !link ? <div className="notice warn">Add the Stripe assessment link on the Team page to include the payment link.</div>
                     : (
@@ -329,7 +380,7 @@ function EnquiryCard({ e, link, payment, notes, onChanged, defaultOpen }: {
 
               {canWork && e.coach_id && e.player_id && (booked || logged) && (
                 <div className="step">
-                  <h4>4. After the assessment</h4>
+                  <h4>6. After the assessment</h4>
                   {!logged && <p className="hint">Tap Completed in the calendar first. The notes you write there fill the message below.</p>}
                   <textarea value={summary} onChange={(ev) => setSummary(ev.target.value)} style={{ minHeight: 190 }} aria-label="Summary message to the parent" />
                   <div className="row mt" style={{ flexWrap: 'wrap' }}>
@@ -365,7 +416,7 @@ function EnquiryCard({ e, link, payment, notes, onChanged, defaultOpen }: {
           <div className="row mt" style={{ flexWrap: 'wrap' }}>
             {e.status === 'declined'
               ? <button type="button" className="btn small ghost" disabled={busy} onClick={() => setStatus(e.coach_id ? 'assigned' : 'new')}>Reopen</button>
-              : e.status !== 'done' && (isAdmin || e.coach_id) && <button type="button" className="btn small ghost" disabled={busy} onClick={() => setStatus('declined')}>Not a fit, decline</button>}
+              : e.status !== 'done' && <button type="button" className="btn small ghost" disabled={busy} onClick={() => setStatus('declined')}>Not a fit, decline</button>}
           </div>
         </div>
       )}

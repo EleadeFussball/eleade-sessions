@@ -221,7 +221,7 @@ function AddSession({ slot, players, createPlayer, defaultCoach, onSaved, onCanc
       </div>
       <div className="row">
         <label className="field"><span>{placeField(format).label}</span>
-          <input type="text" value={location} onChange={(e) => loc.edit(e.target.value)} placeholder={placeField(format).placeholder} /></label>
+          <input type="text" list={format === 'analysis' ? undefined : 'pitches'} value={location} onChange={(e) => loc.edit(e.target.value)} placeholder={placeField(format).placeholder} /></label>
         {!weekly && (
           <label className="field"><span>Note <span className="hint">(optional)</span></span>
             <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Meet at the car park" /></label>

@@ -111,7 +111,7 @@ export function RegularSessions({ playerId }: { playerId: string }) {
               <input type="text" inputMode="numeric" value={time} placeholder="e.g. 630" onChange={(e) => setTime(e.target.value)}
                      onBlur={() => setTime(normaliseTime(time) || time)} /></label>
             <label className="field"><span>{placeField(format).label}</span>
-              <input type="text" value={location} onChange={(e) => loc.edit(e.target.value)} placeholder={placeField(format).placeholder} /></label>
+              <input type="text" list={format === 'analysis' ? undefined : 'pitches'} value={location} onChange={(e) => loc.edit(e.target.value)} placeholder={placeField(format).placeholder} /></label>
           </div>
           <div className="field">
             <span className="fieldlabel">Session type</span>

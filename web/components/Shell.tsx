@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { addDays, todayISO, fromISO, weekStart } from '@/lib/dates';
 import { UploadBar, UploadProvider } from '@/lib/uploads';
+import { PitchList } from '@/lib/locations';
 
 const TABS = [
   { href: '/', label: 'Your week', admin: false },
@@ -69,12 +70,12 @@ export function Shell({ children }: { children: ReactNode }) {
     return () => { alive = false; };
   }, [coach, path]);
 
-  // Jan sees how many enquiries still need a coach; a coach sees how many are waiting for them.
+  // Every coach sees how many new enquiries still need a call; Jan also counts his sales calls.
   useEffect(() => {
     if (!coach) return;
     let alive = true;
     const q = supabase.from('enquiries').select('id', { count: 'exact', head: true });
-    (isAdmin ? q.or('status.eq.new,and(status.eq.done,outcome.eq.handover)') : q.eq('status', 'assigned'))
+    (isAdmin ? q.or('status.eq.new,and(status.eq.done,outcome.eq.handover)') : q.eq('status', 'new'))
       .then(({ count }) => { if (alive) setNewEnquiries(count ?? 0); });
     return () => { alive = false; };
   }, [coach, isAdmin, path]);
@@ -116,6 +117,7 @@ export function Shell({ children }: { children: ReactNode }) {
       </div>
       <main className="page">
         <UploadBar />
+        <PitchList />
         {!session.user.user_metadata?.password_set && path !== '/account' && (
           <div className="notice warn">
             Set a password so you can sign in without waiting for an email. <Link href="/account">Set password</Link>
