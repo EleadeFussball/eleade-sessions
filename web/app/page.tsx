@@ -89,7 +89,7 @@ export default function YourWeek() {
       {open && (
         <Sheet title={`${fmtDate(open.session_date, true)}${open.start_time ? `, ${hhmm(open.start_time)}` : ''}`} onClose={() => setOpenKey(null)}>
           <ul className="list" style={{ borderTop: 0 }}>
-            <ScheduleItem key={entryKey(open) + (open.prep ?? '')} o={open} onDone={() => { setOpenKey(null); refresh(); }} />
+            <ScheduleItem key={entryKey(open) + (open.prep ?? '')} o={open} startMode={!open.session_id && open.kind !== 'logged' && open.session_date <= todayISO() ? 'done' : ''} onDone={() => { setOpenKey(null); refresh(); }} />
           </ul>
         </Sheet>
       )}

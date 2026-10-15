@@ -109,7 +109,7 @@ export function CalendarView({ reloadKey = 0, onChanged }: { reloadKey?: number;
         <CalendarGrid
           days={days} entries={shown} selected={openKey}
           onPickSlot={(day, time) => { setOpenKey(null); setOpenMode(''); setSlot({ day, time }); setErr(''); }}
-          onPickEntry={(o) => { setSlot(null); setOpenMode(''); setOpenKey(o && entryKey(o)); }}
+          onPickEntry={(o) => { setSlot(null); setOpenMode(o && !o.session_id && o.kind !== 'logged' && o.session_date <= todayISO() ? 'done' : ''); setOpenKey(o && entryKey(o)); }}
           onComplete={(o) => { setSlot(null); setOpenMode('done'); setOpenKey(entryKey(o)); }}
           onMove={onMove}
         />

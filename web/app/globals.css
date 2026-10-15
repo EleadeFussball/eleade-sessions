@@ -345,3 +345,26 @@ details.panel[open] > summary { border-bottom: 1px solid var(--line); margin-bot
 /* cancelled in advance: still visible, faded with a red outline */
 .ev.cx, .day-card.cx { opacity: .5; outline: 2px solid #E03131; outline-offset: -2px; background: color-mix(in srgb, var(--cc, #000) 5%, #fff); }
 .ev.cx .ev-name { text-decoration: line-through; }
+
+/* Team settings are for the computer only */
+.tab.desk-only { display: none; }
+@media (min-width: 640px) { .tab.desk-only { display: block; } }
+
+/* Clip uploads, shown on every page */
+.uploads { position: sticky; top: 8px; z-index: 20; display: grid; gap: 6px; margin-bottom: 12px; }
+.upload { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+.upload.done { border-color: var(--turf); }
+.upload.error { border-color: var(--red); }
+.upload-line { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 600; font-size: .92rem; }
+.upload-track { height: 6px; border-radius: 999px; background: var(--line); margin-top: 8px; overflow: hidden; }
+.upload-fill { height: 100%; background: var(--brand-red); transition: width .3s; }
+.upload-hint { color: var(--muted); font-size: .8rem; margin-top: 6px; }
+
+/* Logging a session step by step */
+.session .head.tappable { cursor: pointer; }
+.logflow .step { border-top: 1px solid var(--line); padding: 12px 0 4px; }
+.logflow .step:first-child { border-top: 0; padding-top: 0; }
+.step-h { display: flex; align-items: center; gap: 8px; font-weight: 700; margin-bottom: 8px; }
+.step-n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: var(--paper); font-size: .78rem; }
+.logflow .more { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 8px; }
+.logflow .more summary { cursor: pointer; color: var(--muted); font-weight: 600; margin-bottom: 8px; }

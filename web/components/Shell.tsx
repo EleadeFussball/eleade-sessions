@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { addDays, todayISO, fromISO, weekStart } from '@/lib/dates';
+import { UploadBar, UploadProvider } from '@/lib/uploads';
 
 const TABS = [
   { href: '/', label: 'Your week', admin: false },
@@ -13,7 +14,7 @@ const TABS = [
   { href: '/week', label: 'Invoices', admin: false },
   { href: '/admin', label: 'Admin', admin: true },
   { href: '/stats', label: 'Stats', admin: true },
-  { href: '/team', label: 'Team', admin: true },
+  { href: '/team', label: 'Team', admin: true, desk: true },
 ];
 
 // "Your week" also covers the calendar and the log page it links to
@@ -105,6 +106,7 @@ export function Shell({ children }: { children: ReactNode }) {
   }
 
   return (
+    <UploadProvider>
     <div className="app">
       <div className="topbar-wrap">
         <header className="topbar">
@@ -113,6 +115,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </header>
       </div>
       <main className="page">
+        <UploadBar />
         {!session.user.user_metadata?.password_set && path !== '/account' && (
           <div className="notice warn">
             Set a password so you can sign in without waiting for an email. <Link href="/account">Set password</Link>
@@ -137,7 +140,7 @@ export function Shell({ children }: { children: ReactNode }) {
       </main>
       <nav className="tabs" aria-label="Main">
         {TABS.filter((t) => !t.admin || isAdmin).map((t) => (
-          <Link key={t.href} href={t.href} className={isOn(t.href) ? 'tab on' : 'tab'}
+          <Link key={t.href} href={t.href} className={`tab${isOn(t.href) ? ' on' : ''}${'desk' in t ? ' desk-only' : ''}`}
                 aria-current={isOn(t.href) ? 'page' : undefined}>
             {t.label}
             {t.href === '/admin' && invoicesWaiting > 0 && <span className="tab-badge" aria-label={`${invoicesWaiting} invoices waiting`}>{invoicesWaiting}</span>}
@@ -146,5 +149,6 @@ export function Shell({ children }: { children: ReactNode }) {
         ))}
       </nav>
     </div>
+    </UploadProvider>
   );
 }
