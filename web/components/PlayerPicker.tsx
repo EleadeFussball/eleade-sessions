@@ -17,7 +17,7 @@ export function CreditBadge({ p }: { p: PlayerBalance }) {
   if (p.billing_model === 'pay_per_session') return <span className="tag">Pays weekly</span>;
   if (!p.last_session && !p.last_purchase && Number(p.sessions_left ?? 0) === 0) return <span className="tag">New</span>;
   const cls = creditClass(p);
-  return <span className={`tag ${cls === 'out' ? 'red' : cls === 'low' ? 'amber' : 'turf'}`}>{num(p.sessions_left)} left</span>;
+  return <span className={`tag ${cls === 'out' ? 'red' : cls === 'low' ? 'amber' : 'turf'}`}>{num(p.sessions_left)} left{Number(p.analyses_left ?? 0) !== 0 ? `, ${num(p.analyses_left)} analysis` : ''}</span>;
 }
 
 export function PlayerPicker({ players, selected, max, onChange, onCreate }: Props) {

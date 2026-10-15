@@ -5,7 +5,7 @@ import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { addDays, fmtDate, todayISO } from '@/lib/dates';
 import { normaliseTime } from '@/lib/time';
-import { FORMAT_LABEL, OUTCOME_LABEL, type Outcome } from '@/lib/types';
+import { FORMAT_LABEL, OUTCOME_LABEL, placeLabel, type Outcome } from '@/lib/types';
 import { cancelEntry, canComplete, completeFrom, confirmEntry, hhmm, moveEntry, savePrep, timeRange, type ScheduleEntry } from '@/lib/schedule';
 import { StripeNote } from '@/components/StripeNote';
 import { EditSession, canEditSession } from '@/components/EditSession';
@@ -82,7 +82,7 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
           : o.kind === 'regular' ? <span className="tag">Weekly</span> : null}
       </div>
       <div className="sub">
-        {FORMAT_LABEL[o.format]}{o.location ? `, ${o.location}` : ''}{showCoach && coachName ? ` · ${coachName}` : ''}
+        {FORMAT_LABEL[o.format]}{o.location ? `, ${placeLabel(o.format, o.location)}` : ''}{showCoach && coachName ? ` · ${coachName}` : ''}
       </div>
       {o.note && <div className="sub">{o.note}</div>}
       {o.prep && mode !== 'plan' && <div className="prep"><span className="prep-label">Plan</span> {o.prep}</div>}

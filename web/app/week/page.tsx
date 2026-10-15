@@ -237,7 +237,7 @@ export default function WeekPage() {
 
           {invoices.length > 0 && (
             <>
-              <h3 className="mt">My invoices</h3>
+              <h3 className="mt">{coachId === coach?.id ? 'My invoices' : `${coaches.find((c) => c.id === coachId)?.name ?? 'Coach'}'s invoices`}</h3>
               <p className="hint">Open means sent and waiting for Jan. Paid shows the day Jan paid it.</p>
               <table className="t">
                 <tbody>{invoices.map((i) => (

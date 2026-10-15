@@ -89,9 +89,15 @@ export default function PlayersPage() {
                       {p.family ? `, ${p.family} family credits` : ''}
                     </span>
                   </span>
-                  {p.billing_model === 'package'
-                    ? <span className={`score ${cls}`} aria-label={`${num(p.sessions_left)} sessions left`}>{num(p.sessions_left)}</span>
-                    : <span className="score none">Pays weekly</span>}
+                  {p.billing_model === 'package' ? (
+                    <span className="scores">
+                      <span className={`score ${cls}`} aria-label={`${num(p.sessions_left)} sessions left`}>{num(p.sessions_left)}<small>sessions</small></span>
+                      {p.pairs_left !== null && p.pairs_left !== undefined && (
+                        <span className={`score${Number(p.pairs_left) < 0 ? ' out' : ''}`} aria-label={`${num(p.pairs_left)} 2:1 sessions left`}>{num(p.pairs_left)}<small>2:1</small></span>
+                      )}
+                      <span className="score ga" aria-label={`${num(p.analyses_left)} game analyses left`}>{num(p.analyses_left)}<small>analysis</small></span>
+                    </span>
+                  ) : <span className="score none">Pays weekly</span>}
                 </Link>
               </li>
             );

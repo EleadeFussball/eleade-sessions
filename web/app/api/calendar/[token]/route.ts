@@ -71,6 +71,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     const summary = `${cancelled ? 'Cancelled: ' : e.done ? '✓ ' : ''}${who}${e.format !== '1:1' && e.players ? ` (${label})` : ''}`;
     const desc = [
       `${label}${e.done ? ', documented' : ''}`,
+      e.format === 'analysis' && e.location ? `Opponent: ${e.location}` : '',
       e.prep ? `Plan: ${e.prep}` : '',
       e.note ? `Note: ${e.note}` : '',
       `Open in eleade Hub: ${origin}/`,
@@ -82,7 +83,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
         ? [`DTSTART;TZID=Australia/Sydney:${local(e.session_date, e.start_time)}`, `DTEND;TZID=Australia/Sydney:${local(e.session_date, e.start_time, e.minutes || 60)}`]
         : [`DTSTART;VALUE=DATE:${ymd(e.session_date)}`, `DTEND;VALUE=DATE:${nextDay(e.session_date)}`]),
       `SUMMARY:${esc(summary)}`,
-      ...(e.location ? [`LOCATION:${esc(e.location)}`] : []),
+      ...(e.location && e.format !== 'analysis' ? [`LOCATION:${esc(e.location)}`] : []),
       `DESCRIPTION:${esc(desc)}`,
       cancelled ? 'STATUS:CANCELLED' : 'STATUS:CONFIRMED', cancelled ? 'TRANSP:TRANSPARENT' : 'TRANSP:OPAQUE',
       'END:VEVENT');

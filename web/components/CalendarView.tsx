@@ -11,7 +11,7 @@ import { CalendarGrid } from '@/components/CalendarGrid';
 import { addDays, fmtDate, isoWeek, todayISO, weekStart } from '@/lib/dates';
 import { normaliseTime } from '@/lib/time';
 import { entryKey, hhmm, loadSchedule, moveEntry, type ScheduleEntry } from '@/lib/schedule';
-import { FORMAT_LABEL, MAX_PLAYERS, type Format } from '@/lib/types';
+import { FORMAT_LABEL, MAX_PLAYERS, placeField, type Format } from '@/lib/types';
 
 const FORMATS: Format[] = ['1:1', '2:1', '4:1', 'analysis', 'assessment', 'testing'];
 const LENGTHS = [45, 60, 90, 120];
@@ -153,7 +153,7 @@ function AddSession({ slot, players, createPlayer, defaultCoach, onSaved, onCanc
   const onError = setLocalErr;
 
   useEffect(() => { setTime(slot.time); }, [slot.time, slot.day]);
-  const loc = useLastLocation(ids[0], setLocation);
+  const loc = useLastLocation(ids[0], setLocation, format === 'analysis');
 
   function pickFormat(f: Format) {
     setFormat(f);
@@ -220,8 +220,8 @@ function AddSession({ slot, players, createPlayer, defaultCoach, onSaved, onCanc
                       }} />
       </div>
       <div className="row">
-        <label className="field"><span>Location</span>
-          <input type="text" value={location} onChange={(e) => loc.edit(e.target.value)} placeholder="e.g. Moore Park" /></label>
+        <label className="field"><span>{placeField(format).label}</span>
+          <input type="text" value={location} onChange={(e) => loc.edit(e.target.value)} placeholder={placeField(format).placeholder} /></label>
         {!weekly && (
           <label className="field"><span>Note <span className="hint">(optional)</span></span>
             <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Meet at the car park" /></label>

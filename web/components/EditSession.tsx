@@ -6,7 +6,7 @@ import { usePlayers } from '@/lib/usePlayers';
 import { PlayerPicker } from '@/components/PlayerPicker';
 import { normaliseTime } from '@/lib/time';
 import { todayISO } from '@/lib/dates';
-import { FORMAT_LABEL, MAX_PLAYERS, OUTCOME_LABEL, PAYMENT_LABEL, type Format, type Outcome, type PaymentMethod } from '@/lib/types';
+import { FORMAT_LABEL, MAX_PLAYERS, OUTCOME_LABEL, PAYMENT_LABEL, placeField, type Format, type Outcome, type PaymentMethod } from '@/lib/types';
 
 const FORMATS: Format[] = ['1:1', '2:1', '4:1', 'analysis', 'assessment', 'testing'];
 const OUTCOMES: Outcome[] = ['attended', 'cancelled_in_time', 'cancelled_late', 'no_show'];
@@ -132,7 +132,7 @@ export function EditSession({ sessionId, onDone, onCancel, onDelete }:
           </div>
         </div>
       )}
-      <label className="field"><span>Location</span><input type="text" value={location} onChange={(e) => setLocation(e.target.value)} /></label>
+      <label className="field"><span>{placeField(format).label}</span><input type="text" value={location} placeholder={placeField(format).placeholder} onChange={(e) => setLocation(e.target.value)} /></label>
       <label className="field"><span>What you worked on</span><textarea value={topic} onChange={(e) => setTopic(e.target.value)} /></label>
       <label className="field"><span>How it went</span><textarea value={obs} onChange={(e) => setObs(e.target.value)} /></label>
       <label className="field"><span>Next session</span><textarea value={improve} onChange={(e) => setImprove(e.target.value)} style={{ minHeight: 64 }} /></label>

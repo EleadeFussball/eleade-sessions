@@ -7,7 +7,7 @@ import { PlayerPicker } from '@/components/PlayerPicker';
 import { useLastLocation } from '@/lib/useLastLocation';
 import { fmtDate, todayISO } from '@/lib/dates';
 import { normaliseTime } from '@/lib/time';
-import { FORMAT_LABEL, MAX_PLAYERS, type Format } from '@/lib/types';
+import { FORMAT_LABEL, MAX_PLAYERS, placeField, placeLabel, type Format } from '@/lib/types';
 
 type Plan = { id: string; coach_id: string; format: Format; weekday: number; start_time: string; location: string | null;
   starts_on: string; ends_on: string | null; plan_players: { player_id: string; players: { name: string } | null }[] };
@@ -25,7 +25,7 @@ export function RegularSessions({ playerId }: { playerId: string }) {
   const [format, setFormat] = useState<Format>('1:1');
   const [ids, setIds] = useState<string[]>([playerId]);
   const [location, setLocation] = useState('');
-  const loc = useLastLocation(ids[0], setLocation);
+  const loc = useLastLocation(ids[0], setLocation, format === 'analysis');
   const [startsOn, setStartsOn] = useState(todayISO());
   const [coachId, setCoachId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -87,7 +87,7 @@ export function RegularSessions({ playerId }: { playerId: string }) {
                 {canManage(p) && <button type="button" className="linkbtn" onClick={() => stop(p)}>Stop</button>}
               </div>
               <div className="sub">
-                {FORMAT_LABEL[p.format]} with {coachName(p.coach_id)}{p.location ? `, ${p.location}` : ''}
+                {FORMAT_LABEL[p.format]} with {coachName(p.coach_id)}{p.location ? `, ${placeLabel(p.format, p.location)}` : ''}
                 {p.plan_players.length > 1 ? `, together with ${p.plan_players.filter((x) => x.player_id !== playerId).map((x) => x.players?.name).join(', ')}` : ''}
                 {p.starts_on > today ? `, starts ${fmtDate(p.starts_on)}` : ''}
               </div>
@@ -110,8 +110,8 @@ export function RegularSessions({ playerId }: { playerId: string }) {
             <label className="field" style={{ flex: '0 0 120px' }}><span>Start</span>
               <input type="text" inputMode="numeric" value={time} placeholder="e.g. 630" onChange={(e) => setTime(e.target.value)}
                      onBlur={() => setTime(normaliseTime(time) || time)} /></label>
-            <label className="field"><span>Location</span>
-              <input type="text" value={location} onChange={(e) => loc.edit(e.target.value)} placeholder="e.g. Moore Park" /></label>
+            <label className="field"><span>{placeField(format).label}</span>
+              <input type="text" value={location} onChange={(e) => loc.edit(e.target.value)} placeholder={placeField(format).placeholder} /></label>
           </div>
           <div className="field">
             <span className="fieldlabel">Session type</span>

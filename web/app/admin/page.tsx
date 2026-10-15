@@ -11,6 +11,7 @@ import { StripeInbox } from '@/components/StripeInbox';
 import { BackupDownload } from '@/components/BackupDownload';
 import { OwnerWeek } from '@/components/OwnerWeek';
 import { InvoiceReminders } from '@/components/InvoiceReminders';
+import { PastInvoices } from '@/components/PastInvoices';
 
 type Expiring = { player_id: string; name: string; family: string | null; package_name: string | null; expires_on: string; days_left: number; sessions_left: number | null; analyses_left: number | null };
 type Missing = { player_id: string; name: string; main_coach_id: string | null; last_logged: string | null };
@@ -147,6 +148,8 @@ export default function AdminPage() {
           <p className="hint mt">In NAB Internet Banking on a computer, import the file as a multiple payment, check the total matches, and approve. Then tap Mark all paid.</p>
         </>
       )}
+
+      <PastInvoices />
 
       <StripeInbox players={players} onChanged={load} />
 

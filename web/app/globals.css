@@ -134,6 +134,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink); outline: n
 .score.low { color: var(--amber); }
 .score.out { color: var(--red); }
 .score.none { font: 500 1rem/1.2 var(--body); color: var(--muted); }
+.scores { display: flex; gap: 14px; align-items: flex-start; flex-shrink: 0; }
+.scores .score { display: flex; flex-direction: column; align-items: center; }
+.scores .score small { font: 500 .68rem/1.3 var(--body); color: var(--muted); margin-top: 3px; }
+.scores .score.ga { font-size: 1.4rem; }
 .scoreboard { display: flex; gap: 24px; align-items: flex-end; margin: 12px 0 4px; }
 .scoreboard .big { font: 800 4.5rem/.85 var(--score); font-variant-numeric: tabular-nums; }
 .scoreboard .big.low { color: var(--amber); }

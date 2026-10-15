@@ -93,3 +93,10 @@ export type InvoiceLine = { session_id: string | null; line_date: string; descri
 
 export const invoiceNo = (i: { coach_name: string; number: number }) =>
   `${i.coach_name.toUpperCase().replace(/[^A-Z]/g, '')}-${String(i.number).padStart(4, '0')}`;
+
+/** Game analysis keeps the opponent in the location field. */
+export const placeLabel = (format: string, location: string | null | undefined) =>
+  !location ? '' : format === 'analysis' ? `vs ${location}` : location;
+export const placeField = (format: string) => format === 'analysis'
+  ? { label: 'Opponent', placeholder: 'e.g. Sydney FC U14' }
+  : { label: 'Location', placeholder: 'e.g. Moore Park' };

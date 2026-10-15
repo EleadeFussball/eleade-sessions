@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/auth';
 import { fmtDate } from '@/lib/dates';
 import { StripeLink } from '@/components/StripeLink';
 import { EditSession, canEditSession } from '@/components/EditSession';
-import { FORMAT_LABEL, OUTCOME_LABEL, PAYMENT_LABEL, type SessionRow } from '@/lib/types';
+import { FORMAT_LABEL, OUTCOME_LABEL, PAYMENT_LABEL, placeLabel, type SessionRow } from '@/lib/types';
 
 export function SessionItem({ s, onChanged, showPlayers = false }: { s: SessionRow; onChanged: () => void; showPlayers?: boolean }) {
   const { coach, coaches, isAdmin } = useAuth();
@@ -32,7 +32,7 @@ export function SessionItem({ s, onChanged, showPlayers = false }: { s: SessionR
         </span>
       </div>
       <div className="sub">
-        {FORMAT_LABEL[s.format]}, {coachName}{s.location ? `, ${s.location}` : ''}{s.imported ? ', from old documentation' : ''}
+        {FORMAT_LABEL[s.format]}, {coachName}{s.location ? `, ${placeLabel(s.format, s.location)}` : ''}{s.imported ? ', from old documentation' : ''}
       </div>
       {s.payment_status && (
         <div style={{ marginTop: 4 }}>

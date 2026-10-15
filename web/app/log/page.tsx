@@ -10,7 +10,7 @@ import { StripeNote, useUnusedPayments } from '@/components/StripeNote';
 import { useLastLocation } from '@/lib/useLastLocation';
 import { normaliseTime } from '@/lib/time';
 import { todayISO, addDays, fmtDate, num } from '@/lib/dates';
-import { FORMAT_LABEL, OUTCOME_LABEL, OUTCOME_HINT, MAX_PLAYERS, PAYMENT_LABEL, type Format, type Outcome, type PaymentMethod, type PlayerBalance } from '@/lib/types';
+import { FORMAT_LABEL, OUTCOME_LABEL, OUTCOME_HINT, MAX_PLAYERS, PAYMENT_LABEL, placeField, type Format, type Outcome, type PaymentMethod, type PlayerBalance } from '@/lib/types';
 
 const FORMATS: Format[] = ['1:1', '2:1', '4:1', 'analysis', 'assessment', 'testing'];
 const ASSESSMENT_HINT: Record<Outcome, string> = {
@@ -44,7 +44,7 @@ export default function LogPage() {
   const [saved, setSaved] = useState<Saved | null>(null);
 
   useEffect(() => { if (coach && !coachId) setCoachId(coach.id); }, [coach, coachId]);
-  const loc = useLastLocation(ids[0], setLocation);
+  const loc = useLastLocation(ids[0], setLocation, format === 'analysis');
 
   // A Stripe payment from this player is waiting: suggest "Paid by Stripe" once per player choice.
   const unused = useUnusedPayments(ids);
@@ -58,7 +58,7 @@ export default function LogPage() {
     }
   }, [ids, unused, format, outcome, payMethod]);
   useEffect(() => {
-    supabase.from('sessions').select('location').not('location', 'is', null)
+    supabase.from('sessions').select('location').not('location', 'is', null).neq('format', 'analysis')
       .order('session_date', { ascending: false }).limit(400)
       .then(({ data }) => {
         const counts = new Map<string, number>();
@@ -228,11 +228,11 @@ export default function LogPage() {
 
         <div className="row">
           <div className="field" style={{ position: 'relative' }}>
-            <label htmlFor="loc" className="fieldlabel">Location</label>
-            <input id="loc" type="text" autoComplete="off" value={location} placeholder="e.g. Moore Park"
+            <label htmlFor="loc" className="fieldlabel">{placeField(format).label}</label>
+            <input id="loc" type="text" autoComplete="off" value={location} placeholder={placeField(format).placeholder}
                    onChange={(e) => { loc.edit(e.target.value); setLocOpen(true); }}
                    onFocus={() => setLocOpen(true)} onBlur={() => setTimeout(() => setLocOpen(false), 150)} />
-            {locOpen && locMatches.length > 0 && (
+            {locOpen && format !== 'analysis' && locMatches.length > 0 && (
               <ul className="results" role="listbox" aria-label="Locations">
                 {locMatches.map((l) => (
                   <li key={l}><button type="button" onMouseDown={(e) => e.preventDefault()}
