@@ -1139,6 +1139,47 @@ values ('2026-10-12', 1960, 7.5, 525, 3, 60);
 select pg_temp.check('Jan can save his weekly figures and sees the KW41 salary',
   (select count(*) = 3 and sum(salary_cost) = 3920 from public.owner_weeks));
 
+-- ---------- Google Drive ----------
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+do $$ begin
+  begin
+    perform public.drive_connect('x', 'someone@example.com');
+    perform pg_temp.check('a coach cannot connect Google Drive', false);
+  exception when others then perform pg_temp.check('a coach cannot connect Google Drive', sqlerrm like '%Only Jan%');
+  end;
+  begin
+    perform public.set_player_folders('[{"player_id":"00000000-0000-0000-0000-0000000000b1","folder_id":"f1"}]');
+    perform pg_temp.check('a coach cannot link player folders', false);
+  exception when others then perform pg_temp.check('a coach cannot link player folders', sqlerrm like '%Only Jan%');
+  end;
+end $$;
+do $$ declare n int; begin
+  select count(*) into n from public.drive_connection;
+  perform pg_temp.check('a coach cannot read the Drive table directly', n = 0);
+exception when others then perform pg_temp.check('a coach cannot read the Drive table directly', true);
+end $$;
+select pg_temp.check('nothing to fetch before Drive is connected', (select count(*) = 0 from public.drive_secret()));
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select public.drive_connect('enc-token', 'info@eleadefussball.com');
+select pg_temp.check('Jan links a player to a folder', public.set_player_folders('[{"player_id":"00000000-0000-0000-0000-0000000000b1","folder_id":"f1","folder_name":"Folder 1"}]') = 1);
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select pg_temp.check('a coach sees Drive is connected', (select connected and connected_email = 'info@eleadefussball.com' from public.drive_status()));
+select pg_temp.check('the app server gets the encrypted key for a coach', (select refresh_token_enc = 'enc-token' from public.drive_secret()));
+select public.record_clip('00000000-0000-0000-0000-0000000000b1', 'file1', '2026-10-15 clip.mp4');
+select pg_temp.check('a coach records an uploaded clip', (select count(*) = 1 from public.drive_clips where player_id = '00000000-0000-0000-0000-0000000000b1'));
+reset role;
+set role anon;
+do $$ begin
+  begin
+    perform public.drive_secret();
+    perform set_config('test.anon_drive', 'allowed', false);
+  exception when others then perform set_config('test.anon_drive', 'denied', false);
+  end;
+end $$;
+reset role;
+select pg_temp.check('a stranger cannot fetch the Drive key', current_setting('test.anon_drive') = 'denied');
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;

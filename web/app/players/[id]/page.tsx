@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+import { ClipUpload } from '@/components/ClipUpload';
 import { creditClass } from '@/lib/usePlayers';
 import { SessionItem } from '@/components/SessionItem';
 import { RegularSessions } from '@/components/RegularSessions';
@@ -14,7 +15,7 @@ import { PAYMENT_LABEL, type PaymentMethod, type PlayerBalance, type SessionRow 
 
 type Player = {
   id: string; name: string; family: string | null; billing_model: 'package' | 'pay_per_session';
-  session_price: number | null; main_coach_id: string | null; active: boolean; opening_confirmed: boolean; profile_notes: string | null;
+  session_price: number | null; main_coach_id: string | null; active: boolean; opening_confirmed: boolean; profile_notes: string | null; drive_folder_id?: string | null;
   created_by: string | null; monthly_recurring?: boolean; pair_price?: number | null;
 };
 type Ledger = { id: string; kind: string; sessions_delta: number; analyses_delta: number; pairs_delta: number; package_name: string | null;
@@ -230,6 +231,8 @@ export default function PlayerPage() {
           </tbody>
         </table>
       )}
+
+      <ClipUpload playerId={p.id} playerName={p.name} folderId={p.drive_folder_id ?? null} />
 
       {(p.billing_model === 'package' || isAdmin) && <RecordPackage playerId={p.id} name={p.name} billing={p.billing_model} onSaved={load} />}
       {isAdmin && <AdminPanel p={p} onSaved={load} />}
