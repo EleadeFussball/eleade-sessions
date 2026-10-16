@@ -202,6 +202,7 @@ export default function WeekPage() {
                 <tfoot><tr><td></td><td>Total (no GST)</td><td className="n">{money(draftTotal)}</td></tr></tfoot>
               </table>
               {draft.some((l) => l.line_date < start) && <p className="hint">Includes earlier sessions that were logged late or changed after an invoice.</p>}
+              {draft.some((l) => l.description.startsWith('Planned:')) && <p className="hint">Planned lines are this week&apos;s sessions still to come, paid now. If one is cancelled in time or taken off the calendar, it comes off your next invoice automatically. Still log each one as usual.</p>}
               {err && <div className="notice err" role="alert">{err}</div>}
               {coachId !== coach?.id && !isAdmin ? null : draftNoRate ? (
                 <div className="notice warn">Some session types have no pay rate yet. Jan sets rates on the Team page.</div>

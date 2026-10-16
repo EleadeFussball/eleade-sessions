@@ -1187,6 +1187,40 @@ end $$;
 reset role;
 select pg_temp.check('a stranger cannot fetch the Drive key', current_setting('test.anon_drive') = 'denied');
 
+-- ---------- Friday-paid coach: planned weekend sessions on the invoice ----------
+reset role;
+insert into public.coaches (id, name, email, is_admin, invoice_planned, paid_separately) values
+  ('00000000-0000-0000-0000-0000000000c9', 'Freddie', 'freddie@test', false, true, true);
+insert into public.coach_rates (coach_id, one_to_one, analysis) values ('00000000-0000-0000-0000-0000000000c9', 50, 40);
+insert into public.sessions (id, session_date, coach_id, format, outcome, logged_at) values
+  ('00000000-0000-0000-0000-0000000f0001', pg_temp.last_sun() - 4, '00000000-0000-0000-0000-0000000000c9', '1:1', 'attended', now());
+insert into public.session_players (session_id, player_id) values ('00000000-0000-0000-0000-0000000f0001', '00000000-0000-0000-0000-0000000000b1');
+insert into public.bookings (id, coach_id, session_date, start_time, format, minutes) values
+  ('00000000-0000-0000-0000-0000000fb001', '00000000-0000-0000-0000-0000000000c9', pg_temp.last_sun() - 1, '09:00', '1:1', 60),
+  ('00000000-0000-0000-0000-0000000fb002', '00000000-0000-0000-0000-0000000000c9', pg_temp.last_sun(), '10:00', 'analysis', 60),
+  ('00000000-0000-0000-0000-0000000fb003', '00000000-0000-0000-0000-0000000000c9', pg_temp.last_sun() - 1, '11:00', '1:1', 60);
+insert into public.booking_players (booking_id, player_id) values
+  ('00000000-0000-0000-0000-0000000fb001', '00000000-0000-0000-0000-0000000000b1'),
+  ('00000000-0000-0000-0000-0000000fb002', '00000000-0000-0000-0000-0000000000b2'),
+  ('00000000-0000-0000-0000-0000000fb003', '00000000-0000-0000-0000-0000000000b3');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select pg_temp.check('a Friday invoice includes the planned Saturday and Sunday sessions',
+  (select count(*) = 4 and sum(amount) = 190 and count(*) filter (where description like 'Planned:%') = 3
+     from public.invoice_draft('00000000-0000-0000-0000-0000000000c9', pg_temp.last_sun() - 2)));
+select public.submit_invoice('00000000-0000-0000-0000-0000000000c9', pg_temp.last_sun() - 2) as finv \gset
+select pg_temp.check('the Friday invoice covers the week to Sunday',
+  (select period_end = pg_temp.last_sun() and total = 190 from public.coach_invoices where id = :'finv'));
+-- the weekend: one session happens, one is cancelled in time, one is taken off the calendar
+select public.confirm_booking('00000000-0000-0000-0000-0000000fb001', 'attended');
+select public.confirm_booking('00000000-0000-0000-0000-0000000fb003', 'cancelled_in_time');
+update public.bookings set cancelled_at = now() where id = '00000000-0000-0000-0000-0000000fb002';
+select pg_temp.check('a planned session that happened is not paid twice, the others come off the next invoice',
+  (select count(*) = 2 and sum(amount) = -90 and bool_and(is_correction)
+     from public.invoice_draft('00000000-0000-0000-0000-0000000000c9', pg_temp.last_sun() + 5)));
+select pg_temp.check('other coaches still invoice only what is logged',
+  not exists (select 1 from public.invoice_draft('00000000-0000-0000-0000-0000000000c4', pg_temp.last_sun() - 2) where description like 'Planned:%'));
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;

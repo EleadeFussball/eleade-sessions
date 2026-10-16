@@ -1,187 +1,240 @@
--- Every coach can work on enquiries (Tyler makes the calls). Pitch locations with Google Maps links.
+-- Coaches paid on Friday (Paul) can invoice the whole week, Monday to Sunday: sessions still planned for the
+-- rest of the week appear as "Planned" lines. When a planned session is logged, it is matched to that line,
+-- so it is not paid twice. If it is cancelled in time, removed from the calendar, or logged differently,
+-- the difference is taken off (or added to) the next invoice automatically.
 
--- ---------- pitch locations ----------
-create table if not exists public.locations (
-  id         uuid primary key default gen_random_uuid(),
-  name       text not null unique,
-  aliases    text[] not null default '{}',
-  address    text,
-  place_id   text,
-  maps_url   text,
-  active     boolean not null default true,
-  created_at timestamptz not null default now()
-);
-alter table public.locations enable row level security;
-drop policy if exists locations_read on public.locations;
-create policy locations_read on public.locations for select to authenticated using (public.is_coach());
-drop policy if exists locations_write on public.locations;
-create policy locations_write on public.locations for all to authenticated using (public.is_admin()) with check (public.is_admin());
-grant select, insert, update, delete on public.locations to authenticated;
+alter table public.coaches add column if not exists invoice_planned boolean not null default false;
+update public.coaches set invoice_planned = true where lower(name) like 'paul%' and not invoice_planned;
 
-insert into public.locations (name, aliases, address, place_id) values
-  ('Gunyama Park', '{Gunyama,Gunymana}', '138 Joynton Ave, Zetland NSW 2017', 'ChIJf7TVQ1GxEmsRWofVzSb26cg'),
-  ('Waverley Oval', '{Waverley,Waverly,Waverely}', '49C Bondi Rd, Bondi Junction NSW 2022', 'ChIJJWXm44ytEmsRsdJ_OBqGo68'),
-  ('Queens Park', '{"Queen''s Park"}', 'Darley Rd, Queens Park NSW 2022', 'ChIJ7UAgqQmyEmsRwBPy-Wh9AQ8'),
-  ('Moore Park', '{"Moore Park Synthetic Field"}', 'Lang Rd, Moore Park NSW 2021', 'ChIJe2Wu8_yxEmsR0i-BuniVspM'),
-  ('Rowland Park', '{Rowland,Rownad}', 'Bunnerong Rd, Daceyville NSW 2032', 'ChIJUWuIYYGxEmsRMCny-Wh9AQ8'),
-  ('Heffron Park', '{Heffron}', '439 Bunnerong Rd, Maroubra NSW 2036', 'ChIJyz-4fGKxEmsRzrLVY5Mstds'),
-  ('Matraville', '{Matra,Mattraville,"Matraville Sports High School"}', 'Matraville Sports High School, Anzac Parade, Chifley NSW 2036', 'ChIJgyHYbuGzEmsRLqUJJm2mR6c'),
-  ('Allan Border Oval', '{"Allan Border"}', 'The Crescent, Mosman NSW 2088', 'ChIJrzrxIxusEmsRapWZthXVx5Q'),
-  ('Village Green UNSW', '{"Village Green"}', 'University Mall, UNSW, Kensington NSW 2033', 'ChIJEZi59YuxEmsREWmDN_gQwbY'),
-  ('Pioneers Park', '{Pioneers,"Pionners Park"}', '1160 Anzac Parade, Malabar NSW 2036', 'ChIJBUPL-sKzEmsRmTeXmzf5DDQ'),
-  ('Peakhurst Park', '{Peakhurst}', '20 Trafalgar St, Peakhurst NSW 2210', 'ChIJHQwESwC5EmsR_G79JL4Puug'),
-  ('David Phillips Sports Field', '{"David Philips","David Phillips"}', 'Banks Ave & Gwea Ave, Daceyville NSW 2032', 'ChIJA2VAs4OxEmsR0Th7sgltGck'),
-  ('Rodney Reserve', '{Rodney}', 'Rodney St, Dover Heights NSW 2030', 'ChIJM5FIzPKtEmsRFsfB5gWNv_I'),
-  ('Perry Park', '{Perry}', '1B Maddox St, Alexandria NSW 2015', 'ChIJF_H9m8exEmsRQCabXgulO5M'),
-  ('Northbridge Oval', '{Northbridge}', '271 Sailors Bay Rd, Northbridge NSW 2063', 'ChIJz68gXLKuEmsR4Pzw-Wh9AQ8'),
-  ('Balmoral Oval', '{Balmoral,Bermoal}', '42 Plunkett Rd, Mosman NSW 2088', 'ChIJy8-3fxKsEmsR6uQQHYzQK3k'),
-  ('Cammeray Park', '{Cammery,Cammeray}', 'Ernest St & Park Ave, Cammeray NSW 2062', 'ChIJTS45-N-vEmsRLetanyjmwfk'),
-  ('Christison Park', '{}', 'Old South Head Rd, Vaucluse NSW 2030', 'ChIJEW7KavesEmsRhvmpXwgFZqI'),
-  ('Coral Sea Park', '{"Coral Sea"}', '53 Yorktown Parade, Maroubra NSW 2035', 'ChIJrZjwItCzEmsRkDLy-Wh9AQ8')
-on conflict (name) do nothing;
--- Matraville: Jan's pin for the access to the school field
-update public.locations set maps_url = 'https://maps.app.goo.gl/ZtRGtbWWWaPo88129'
- where name = 'Matraville' and maps_url is null;
+alter table public.invoice_lines add column if not exists planned_kind text check (planned_kind in ('regular', 'once'));
+alter table public.invoice_lines add column if not exists planned_ref uuid;
+alter table public.invoice_lines add column if not exists planned_date date;
+create index if not exists invoice_lines_planned on public.invoice_lines (planned_ref) where planned_ref is not null;
 
--- ---------- enquiries: every coach ----------
-alter table public.enquiries add column if not exists preferred_location text;
-alter table public.enquiries add column if not exists ideal_times text;
-alter table public.enquiries add column if not exists called_by uuid;
-alter table public.enquiries add column if not exists whatsapp_group_at timestamptz;
+-- Pay for one session of this type at the coach's rate (null when no rate is set).
+create or replace function public.coach_rate(p_coach_id uuid, p_format text) returns numeric
+language sql stable security invoker set search_path = public as $$
+  select case when c.salaried then 0 else
+           case p_format when '1:1' then r.one_to_one when '2:1' then r.two_to_one when '4:1' then r.four_to_one
+                         when 'analysis' then r.analysis when 'testing' then r.testing
+                         when 'assessment' then coalesce(r.assessment, r.one_to_one) end end
+    from public.coaches c left join public.coach_rates r on r.coach_id = c.id
+   where c.id = p_coach_id
+$$;
 
-drop policy if exists enquiries_read on public.enquiries;
-create policy enquiries_read on public.enquiries for select to authenticated using (public.is_coach());
+drop function if exists public.invoice_draft(uuid, date);
+create function public.invoice_draft(p_coach_id uuid, p_until date)
+returns table (session_id uuid, line_date date, description text, amount numeric, is_correction boolean, no_rate boolean,
+               planned_kind text, planned_ref uuid, planned_date date)
+language sql stable security invoker set search_path = public as $$
+  with cur as (
+    select cp.session_id, cp.session_date, cp.players, cp.format, cp.outcome, cp.pay, cp.cash_kept,
+           case when cp.pay is null then null else cp.pay - cp.cash_kept end as net
+      from public.coach_pay cp
+     where cp.coach_id = p_coach_id
+       and cp.session_date <= p_until
+       and cp.session_date >= coalesce((select (value #>> '{}')::date from public.settings where key = 'invoices_from'), date '2000-01-01')
+  ),
+  -- lines paid in advance for planned sessions, and what became of each planned session
+  planned_paid as (
+    select il.planned_kind as kind, il.planned_ref as ref,
+           case when il.planned_kind = 'regular' then il.planned_date end as pdate,
+           sum(il.amount) as amount, max(il.line_date) as line_date
+      from public.invoice_lines il
+      join public.coach_invoices ci on ci.id = il.invoice_id
+     where ci.coach_id = p_coach_id and il.planned_kind is not null
+     group by 1, 2, 3
+  ),
+  planned as (
+    select pp.*,
+           case pp.kind
+             when 'once' then (select b.session_id from public.bookings b where b.id = pp.ref)
+             else (select s.id from public.sessions s where s.plan_id = pp.ref and s.plan_date = pp.pdate) end as resolved,
+           case pp.kind
+             when 'once' then not exists (select 1 from public.bookings b
+                                           where b.id = pp.ref and b.cancelled_at is null and b.coach_id = p_coach_id)
+             else not exists (select 1 from public.session_plans pl
+                               where pl.id = pp.ref and pl.coach_id = p_coach_id and pp.pdate >= pl.starts_on
+                                 and (pl.ends_on is null or pp.pdate <= pl.ends_on)) end as gone
+      from planned_paid pp
+  ),
+  billed as (
+    select x.session_id, sum(x.amount) as amount, max(x.line_date) as line_date
+      from (
+        select il.session_id, il.amount, il.line_date
+          from public.invoice_lines il
+          join public.coach_invoices ci on ci.id = il.invoice_id
+         where ci.coach_id = p_coach_id and il.session_id is not null
+        union all
+        -- a planned line counts as paid for the session it became, once that session is due
+        select p.resolved, p.amount, p.line_date
+          from planned p join public.sessions s on s.id = p.resolved
+         where s.session_date <= p_until
+      ) x
+     group by x.session_id
+  ),
+  logged as (
+    select coalesce(cur.session_id, b.session_id) as session_id,
+           coalesce(cur.session_date, b.line_date) as line_date,
+           case when cur.session_id is null then 'Correction: session taken off the record'
+                else (case when b.session_id is not null then 'Correction: ' else '' end)
+                  || case cur.format when '1:1' then '1:1 session' when '2:1' then '2:1 group session'
+                                     when '4:1' then '4:1 group session' when 'analysis' then 'Game analysis'
+                                     when 'testing' then 'Testing' when 'assessment' then 'Assessment'
+                                     else cur.format end
+                  || coalesce(', ' || cur.players, '')
+                  || case cur.outcome when 'cancelled_late' then ' (cancelled late)'
+                                      when 'no_show' then ' (no show)'
+                                      when 'cancelled_in_time' then ' (cancelled in time)' else '' end
+                  || case when cur.cash_kept > 0
+                          then ' (cash $' || to_char(cur.cash_kept, 'FM999990.00') || ' kept, less pay $'
+                               || to_char(coalesce(cur.pay, 0), 'FM999990.00') || ')'
+                          else '' end
+           end as description,
+           coalesce(cur.net, 0) - coalesce(b.amount, 0) as amount,
+           b.session_id is not null as is_correction,
+           cur.session_id is not null and cur.pay is null as no_rate,
+           null::text as planned_kind, null::uuid as planned_ref, null::date as planned_date
+      from cur
+      full join billed b on b.session_id = cur.session_id
+     where (cur.session_id is null and b.amount <> 0)
+        or (cur.session_id is not null and (cur.pay is null or cur.net <> coalesce(b.amount, 0)))
+  ),
+  -- paid in advance, but taken off the calendar before it happened
+  removed as (
+    select null::uuid, p.line_date, 'Correction: planned session taken off the calendar', -p.amount, true, false,
+           p.kind, p.ref, p.pdate
+      from planned p
+     where p.resolved is null and p.gone and p.amount <> 0
+  ),
+  -- Friday-paid coaches: the rest of this week's calendar, paid now
+  upcoming as (
+    select null::uuid, c.session_date,
+           'Planned: '
+             || case c.format when '1:1' then '1:1 session' when '2:1' then '2:1 group session'
+                              when '4:1' then '4:1 group session' when 'analysis' then 'Game analysis'
+                              when 'testing' then 'Testing' when 'assessment' then 'Assessment' else c.format end
+             || coalesce(', ' || c.players, ''),
+           coalesce(public.coach_rate(p_coach_id, c.format), 0), false,
+           public.coach_rate(p_coach_id, c.format) is null,
+           c.kind, c.ref_id, case when c.kind = 'regular' then c.plan_date else c.session_date end
+      from public.calendar(p_until + 1, p_until + (7 - extract(isodow from p_until)::int)) c
+     where (select invoice_planned from public.coaches where id = p_coach_id)
+       and c.coach_id = p_coach_id and c.kind in ('regular', 'once') and c.session_id is null
+       and not exists (select 1 from planned p where p.kind = c.kind and p.ref = c.ref_id
+                         and (c.kind = 'once' or p.pdate = c.plan_date))
+  )
+  select * from logged
+  union all select * from removed
+  union all select * from upcoming
+  order by 2, 3
+$$;
+grant execute on function public.invoice_draft(uuid, date) to authenticated;
 
-create or replace function public.enquiry_make_player(p_id uuid) returns uuid
-language plpgsql security definer set search_path = public as $$
-declare
-  e public.enquiries%rowtype;
-  v_name text;
-  v_player uuid;
-begin
-  if not public.is_coach() then raise exception 'Sign in as a coach'; end if;
-  select * into e from public.enquiries where id = p_id for update;
-  if not found then raise exception 'Enquiry not found'; end if;
-  if e.player_id is not null then return e.player_id; end if;
-  v_name := trim(coalesce(e.first_name, '') || ' ' || coalesce(e.last_name, ''));
-  if v_name = '' then raise exception 'The enquiry has no player name'; end if;
-  select id into v_player from public.players where lower(name) = lower(v_name);
-  if v_player is null then
-    insert into public.players (name, main_coach_id, created_by)
-    values (v_name, e.coach_id, auth.uid()) returning id into v_player;
-  end if;
-  update public.enquiries set player_id = v_player where id = p_id;
-  return v_player;
-end $$;
+-- The week an invoice covers: to Sunday for a Friday-paid coach, otherwise to the invoice date.
+create or replace function public.invoice_period_end(p_coach_id uuid, p_until date) returns date
+language sql stable set search_path = public as $$
+  select case when (select invoice_planned from public.coaches where id = p_coach_id)
+              then p_until + (7 - extract(isodow from p_until)::int) else p_until end
+$$;
 
--- Any coach (usually Tyler, after the call) hands the enquiry to a coach. The player is created straight away.
-create or replace function public.assign_enquiry(p_id uuid, p_coach_id uuid) returns uuid
-language plpgsql security definer set search_path = public as $$
-declare v_player uuid; b public.bookings%rowtype; v_new uuid;
-begin
-  if not public.is_coach() then raise exception 'Sign in as a coach'; end if;
-  if not exists (select 1 from public.coaches where id = p_coach_id and active) then raise exception 'Coach not found'; end if;
-  update public.enquiries
-     set coach_id = p_coach_id, assigned_at = now(), assigned_by = auth.uid(),
-         status = case when status in ('new', 'declined') then 'assigned' else status end
-   where id = p_id;
-  if not found then raise exception 'Enquiry not found'; end if;
-  v_player := public.enquiry_make_player(p_id);
-  update public.players set main_coach_id = p_coach_id
-   where id = v_player and (main_coach_id is null or not exists (select 1 from public.session_players where player_id = v_player));
-  -- a planned assessment moves to the new coach's calendar (bookings keep their coach, so it is re-created)
-  select * into b from public.bookings
-   where id = (select booking_id from public.enquiries where id = p_id) and session_id is null and cancelled_at is null;
-  if found and b.coach_id <> p_coach_id then
-    update public.bookings set cancelled_at = now() where id = b.id;
-    insert into public.bookings (coach_id, session_date, start_time, format, location, note, minutes)
-    values (p_coach_id, b.session_date, b.start_time, b.format, b.location, b.note, b.minutes) returning id into v_new;
-    insert into public.booking_players (booking_id, player_id) select v_new, player_id from public.booking_players where booking_id = b.id;
-    update public.enquiries set booking_id = v_new where id = p_id;
-  end if;
-  return v_player;
-end $$;
-
-create or replace function public.set_enquiry_status(p_id uuid, p_status text, p_note text default null) returns void
-language plpgsql security definer set search_path = public as $$
-begin
-  if not public.is_coach() then raise exception 'Sign in as a coach'; end if;
-  if p_status not in ('new', 'assigned', 'contacted', 'booked', 'done', 'declined') then raise exception 'Unknown status'; end if;
-  update public.enquiries set status = p_status, note = coalesce(p_note, note) where id = p_id;
-  if not found then raise exception 'Enquiry not found'; end if;
-end $$;
-
-create or replace function public.enquiry_book(p_id uuid, p_date date, p_time time, p_minutes int, p_location text default null)
+create or replace function public.submit_invoice(p_coach_id uuid, p_until date)
 returns uuid
 language plpgsql security definer set search_path = public as $$
 declare
-  e public.enquiries%rowtype;
-  v_booking uuid;
+  v_coach public.coaches%rowtype;
+  v_det   public.coach_details%rowtype;
+  v_total numeric;
+  v_n     int;
+  v_no    int;
+  v_id    uuid;
 begin
-  if not public.is_coach() then raise exception 'Sign in as a coach'; end if;
-  select * into e from public.enquiries where id = p_id for update;
-  if not found then raise exception 'Enquiry not found'; end if;
-  if e.coach_id is null then raise exception 'Assign a coach first'; end if;
-  if e.player_id is null then raise exception 'Create the player first'; end if;
-  if e.booking_id is not null and exists (select 1 from public.bookings where id = e.booking_id and cancelled_at is null and session_id is null) then
-    update public.bookings
-       set session_date = p_date, start_time = p_time, minutes = coalesce(p_minutes, 60),
-           location = nullif(trim(p_location), '')
-     where id = e.booking_id;
-    update public.enquiries set status = 'booked' where id = p_id;
-    return e.booking_id;
+  if not (public.is_admin() or p_coach_id = public.current_coach_id()) then
+    raise exception 'You can only submit your own invoice';
   end if;
-  insert into public.bookings (coach_id, session_date, start_time, format, location, note, minutes)
-  values (e.coach_id, p_date, p_time, 'assessment', nullif(trim(p_location), ''), 'Assessment from website enquiry', coalesce(p_minutes, 60))
-  returning id into v_booking;
-  insert into public.booking_players (booking_id, player_id) values (v_booking, e.player_id);
-  update public.enquiries set booking_id = v_booking, status = 'booked' where id = p_id;
-  return v_booking;
-end $$;
+  select * into v_coach from public.coaches where id = p_coach_id for update;
+  if not found then raise exception 'Coach not found'; end if;
+  if v_coach.salaried then raise exception '% is salaried, so no invoice is needed', v_coach.name; end if;
+  if p_until > public.today_sydney() then raise exception 'An invoice can only run up to today'; end if;
 
-create or replace function public.add_enquiry(p_fields jsonb) returns uuid
-language plpgsql security definer set search_path = public as $$
-declare v_id uuid;
-begin
-  if not public.is_coach() then raise exception 'Sign in as a coach'; end if;
-  if nullif(trim(p_fields ->> 'first_name'), '') is null then raise exception 'Add the player''s name'; end if;
-  v_id := public.record_enquiry('manual-' || gen_random_uuid()::text, p_fields, jsonb_build_object('manual', true));
-  update public.enquiries set source = 'manual' where id = v_id;
+  select * into v_det from public.coach_details where coach_id = p_coach_id;
+  if not v_coach.paid_separately then
+    if not found or coalesce(trim(v_det.legal_name), '') = '' or v_det.abn is null or v_det.bsb is null
+       or v_det.account_number is null or coalesce(trim(v_det.account_name), '') = '' then
+      raise exception 'Add your name, ABN and bank details on the Account page first';
+    end if;
+  end if;
+
+  if exists (select 1 from public.invoice_draft(p_coach_id, p_until) d where d.no_rate) then
+    raise exception 'Some session types have no pay rate yet. Ask Jan to set it on the Team page';
+  end if;
+  select count(*), coalesce(sum(d.amount), 0) into v_n, v_total from public.invoice_draft(p_coach_id, p_until) d;
+  if v_n = 0 or v_total <= 0 then raise exception 'Nothing to invoice up to %', to_char(p_until, 'DD Mon'); end if;
+
+  select coalesce(max(number), 0) + 1 into v_no from public.coach_invoices where coach_id = p_coach_id;
+  insert into public.coach_invoices (coach_id, number, period_start, period_end, total, coach_name,
+        coach_legal_name, coach_abn, bsb, account_number, account_name, business_name, business_abn, submitted_by)
+  values (p_coach_id, v_no, p_until - (extract(isodow from p_until)::int - 1), public.invoice_period_end(p_coach_id, p_until),
+          v_total, v_coach.name,
+          coalesce(nullif(trim(v_det.legal_name), ''), v_coach.name), coalesce(v_det.abn, ''), coalesce(v_det.bsb, ''),
+          coalesce(v_det.account_number, ''), coalesce(trim(v_det.account_name), ''),
+          (select value #>> '{}' from public.settings where key = 'business_name'),
+          nullif((select value #>> '{}' from public.settings where key = 'business_abn'), ''),
+          auth.uid())
+  returning id into v_id;
+  insert into public.invoice_lines (invoice_id, session_id, line_date, description, amount, is_correction, planned_kind, planned_ref, planned_date)
+  select v_id, d.session_id, d.line_date, d.description, d.amount, d.is_correction, d.planned_kind, d.planned_ref, d.planned_date
+    from public.invoice_draft(p_coach_id, p_until) d;
   return v_id;
 end $$;
+revoke execute on function public.submit_invoice(uuid, date) from public, anon;
+grant execute on function public.submit_invoice(uuid, date) to authenticated;
 
--- The call with the parents: notes, preferred pitch and ideal times.
-drop function if exists public.enquiry_called(uuid, text);
-create or replace function public.enquiry_called(p_id uuid, p_note text default null, p_location text default null, p_times text default null)
-returns void
+create or replace function public.update_invoice(p_invoice_id uuid)
+returns uuid
 language plpgsql security definer set search_path = public as $$
+declare
+  v_inv public.coach_invoices%rowtype;
+  v_until date;
+  v_total numeric;
+  v_n int;
 begin
-  if not public.is_coach() then raise exception 'Sign in as a coach'; end if;
-  update public.enquiries
-     set called_at = coalesce(called_at, now()), called_by = coalesce(called_by, auth.uid()),
-         note = coalesce(nullif(trim(p_note), ''), note),
-         preferred_location = coalesce(nullif(trim(p_location), ''), preferred_location),
-         ideal_times = coalesce(nullif(trim(p_times), ''), ideal_times)
-   where id = p_id;
-  if not found then raise exception 'Enquiry not found'; end if;
-end $$;
+  select * into v_inv from public.coach_invoices where id = p_invoice_id for update;
+  if not found then raise exception 'Invoice not found'; end if;
+  if not (public.is_admin() or v_inv.coach_id = public.current_coach_id()) then
+    raise exception 'You can only change your own invoice';
+  end if;
+  if v_inv.status = 'paid' then
+    raise exception 'This invoice is already paid, so it can no longer be changed. Anything missing goes on your next invoice';
+  end if;
+  if not public.is_admin() and public.sydney_now() >= public.invoice_edit_until(v_inv.period_end) then
+    raise exception 'An invoice can be changed until Sunday 8pm of its week. Anything missing goes on your next invoice';
+  end if;
 
-create or replace function public.enquiry_whatsapp_group(p_id uuid, p_done boolean default true) returns void
-language plpgsql security definer set search_path = public as $$
-begin
-  if not public.is_coach() then raise exception 'Sign in as a coach'; end if;
-  update public.enquiries set whatsapp_group_at = case when p_done then coalesce(whatsapp_group_at, now()) end where id = p_id;
-  if not found then raise exception 'Enquiry not found'; end if;
-end $$;
+  v_until := least(public.today_sydney(), v_inv.period_end + (7 - extract(isodow from v_inv.period_end)::int));
+  delete from public.invoice_lines where invoice_id = p_invoice_id;
 
-create or replace function public.set_enquiry_outcome(p_id uuid, p_outcome text) returns void
-language plpgsql security definer set search_path = public as $$
-begin
-  if not public.is_coach() then raise exception 'Sign in as a coach'; end if;
-  if p_outcome not in ('package5', 'package10', 'handover', 'not_continuing') then raise exception 'Unknown outcome'; end if;
-  update public.enquiries set outcome = p_outcome, outcome_at = now(), status = 'done' where id = p_id;
-  if not found then raise exception 'Enquiry not found'; end if;
-end $$;
+  if exists (select 1 from public.invoice_draft(v_inv.coach_id, v_until) d where d.no_rate) then
+    raise exception 'Some session types have no pay rate yet. Ask Jan to set it on the Team page';
+  end if;
+  select count(*), coalesce(sum(d.amount), 0) into v_n, v_total from public.invoice_draft(v_inv.coach_id, v_until) d;
+  if v_n = 0 or v_total <= 0 then
+    delete from public.coach_invoices where id = p_invoice_id;
+    return null;
+  end if;
 
-revoke execute on function public.enquiry_called(uuid, text, text, text), public.enquiry_whatsapp_group(uuid, boolean) from public, anon;
-grant execute on function public.enquiry_called(uuid, text, text, text), public.enquiry_whatsapp_group(uuid, boolean) to authenticated;
+  update public.coach_invoices
+     set total = v_total,
+         period_start = v_until - (extract(isodow from v_until)::int - 1),
+         period_end = public.invoice_period_end(v_inv.coach_id, v_until),
+         issued_on = public.today_sydney(),
+         submitted_at = now(),
+         submitted_by = auth.uid()
+   where id = p_invoice_id;
+  insert into public.invoice_lines (invoice_id, session_id, line_date, description, amount, is_correction, planned_kind, planned_ref, planned_date)
+  select p_invoice_id, d.session_id, d.line_date, d.description, d.amount, d.is_correction, d.planned_kind, d.planned_ref, d.planned_date
+    from public.invoice_draft(v_inv.coach_id, v_until) d;
+  return p_invoice_id;
+end $$;
+revoke all on function public.update_invoice(uuid) from public, anon;
+grant execute on function public.update_invoice(uuid) to authenticated;

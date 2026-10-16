@@ -67,6 +67,7 @@ function CoachRow({ c, r, onSaved, onError }: { c: Coach; r?: Rates; onSaved: (m
   const [active, setActive] = useState(c.active);
   const [salaried, setSalaried] = useState(c.salaried);
   const [separate, setSeparate] = useState(c.paid_separately);
+  const [planned, setPlanned] = useState(!!c.invoice_planned);
   const [vals, setVals] = useState<Record<string, string>>({});
   useEffect(() => {
     if (r) setVals(Object.fromEntries(RATE_FIELDS.map(([k]) => [k, r[k] === null ? '' : String(r[k])])));
@@ -74,7 +75,7 @@ function CoachRow({ c, r, onSaved, onError }: { c: Coach; r?: Rates; onSaved: (m
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    const c1 = await supabase.from('coaches').update({ email: email.trim().toLowerCase() || null, active, salaried, paid_separately: separate }).eq('id', c.id);
+    const c1 = await supabase.from('coaches').update({ email: email.trim().toLowerCase() || null, active, salaried, paid_separately: separate, invoice_planned: planned }).eq('id', c.id);
     if (c1.error) { onError(errorText(c1.error)); return; }
     const body = Object.fromEntries(RATE_FIELDS.map(([k]) => [k, vals[k] === '' ? (k === 'one_to_one' || k === 'assessment' ? null : 0) : Number(vals[k])]));
     const c2 = await supabase.from('coach_rates').upsert({ coach_id: c.id, ...body, updated_at: new Date().toISOString() });
@@ -110,6 +111,10 @@ function CoachRow({ c, r, onSaved, onError }: { c: Coach; r?: Rates; onSaved: (m
           <label className="field" style={{ display: 'flex', gap: 10, alignItems: 'center', margin: 0 }}>
             <input type="checkbox" checked={separate} onChange={(e) => setSeparate(e.target.checked)} style={{ width: 22, height: 22 }} />
             <span style={{ margin: 0 }}>Paid separately (invoice needs no ABN or bank details)</span>
+          </label>
+          <label className="field" style={{ display: 'flex', gap: 10, alignItems: 'center', margin: 0 }}>
+            <input type="checkbox" checked={planned} onChange={(e) => setPlanned(e.target.checked)} style={{ width: 22, height: 22 }} />
+            <span style={{ margin: 0 }}>Paid on Friday (invoice includes the planned weekend)</span>
           </label>
           <button className="btn small" style={{ flex: '0 0 auto' }}>Save {c.name}</button>
         </div>

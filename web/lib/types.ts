@@ -12,6 +12,7 @@ export type Coach = {
   active: boolean;
   salaried: boolean;
   paid_separately: boolean;
+  invoice_planned?: boolean;
 };
 
 export type PlayerBalance = {
