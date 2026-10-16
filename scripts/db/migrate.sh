@@ -10,12 +10,12 @@ P=(psql "$SUPABASE_DB_URL" -X -q -v ON_ERROR_STOP=1 -t -A)
               alter table public.app_migrations enable row level security;
               revoke all on public.app_migrations from anon, authenticated;" >/dev/null
 
-# First run: everything up to 0031 was already applied by hand before this job existed.
+# First run: everything up to 0039 was already applied by hand (pasted) before this job was switched on.
 if [ "$("${P[@]}" -c "select count(*) from public.app_migrations")" = "0" ]; then
   for f in *.sql; do
-    [[ "$f" < "0032" ]] && "${P[@]}" -c "insert into public.app_migrations (name) values ('$f') on conflict do nothing" >/dev/null
+    [[ "$f" < "0040" ]] && "${P[@]}" -c "insert into public.app_migrations (name) values ('$f') on conflict do nothing" >/dev/null
   done
-  echo "Recorded the migrations applied before this job (up to 0031)."
+  echo "Recorded the migrations applied by hand before this job (up to 0039)."
 fi
 
 applied=0
