@@ -1,4 +1,6 @@
 'use client';
+import { DocsTodo } from '@/components/DocsTodo';
+import { VideosDue } from '@/components/VideosDue';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
@@ -60,6 +62,8 @@ export default function YourWeek() {
   return (
     <>
       <h1>Your week</h1>
+      {coach && <DocsTodo coachId={coach.id} />}
+      {coach && <VideosDue coachId={coach.id} />}
       <div className="days2">
         <Day day={today} label="Today" />
         <Day day={tomorrow} label="Tomorrow" />

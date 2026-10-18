@@ -368,3 +368,7 @@ details.panel[open] > summary { border-bottom: 1px solid var(--line); margin-bot
 .step-n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: var(--paper); font-size: .78rem; }
 .logflow .more { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 8px; }
 .logflow .more summary { cursor: pointer; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+
+/* To-do lists on Your week and Invoices */
+.todo { border-left: 4px solid var(--brand-red); }
+.todo-row { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 10px; background: none; border: 0; padding: 4px 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }

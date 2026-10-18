@@ -1,31 +1,143 @@
--- Coaches paid on Friday (Paul) can invoice the whole week, Monday to Sunday: sessions still planned for the
--- rest of the week appear as "Planned" lines. When a planned session is logged, it is matched to that line,
--- so it is not paid twice. If it is cancelled in time, removed from the calendar, or logged differently,
--- the difference is taken off (or added to) the next invoice automatically.
+-- 1. Documentation: coaches see every attended session still missing "What you worked on" and fill it in on the spot.
+--    From Monday 19 October an invoice cannot be sent while one of its sessions is missing it.
+-- 2. Training videos: every 4 to 6 weeks (varied per player) the main coach uploads a short clip of each player.
+-- 3. Admin hours: coaches add hours (e.g. 1 or 1.5) at $30 an hour; they appear on their next invoice.
 
-alter table public.coaches add column if not exists invoice_planned boolean not null default false;
-update public.coaches set invoice_planned = true where lower(name) like 'paul%' and not invoice_planned;
+insert into public.settings (key, value) values
+  ('docs_required_from', '"2026-10-19"'), ('docs_reminder_from', '"2026-10-05"'),
+  ('videos_from', '"2026-10-18"'), ('admin_hour_rate', '30')
+on conflict (key) do nothing;
 
-alter table public.invoice_lines add column if not exists planned_kind text check (planned_kind in ('regular', 'once'));
-alter table public.invoice_lines add column if not exists planned_ref uuid;
-alter table public.invoice_lines add column if not exists planned_date date;
-create index if not exists invoice_lines_planned on public.invoice_lines (planned_ref) where planned_ref is not null;
-
--- Pay for one session of this type at the coach's rate (null when no rate is set).
-create or replace function public.coach_rate(p_coach_id uuid, p_format text) returns numeric
-language sql stable security invoker set search_path = public as $$
-  select case when c.salaried then 0 else
-           case p_format when '1:1' then r.one_to_one when '2:1' then r.two_to_one when '4:1' then r.four_to_one
-                         when 'analysis' then r.analysis when 'testing' then r.testing
-                         when 'assessment' then coalesce(r.assessment, r.one_to_one) end end
-    from public.coaches c left join public.coach_rates r on r.coach_id = c.id
-   where c.id = p_coach_id
+create or replace function public.docs_required_from() returns date
+language sql stable set search_path = public as $$
+  select coalesce((select (value #>> '{}')::date from public.settings where key = 'docs_required_from'), date '2026-10-19')
 $$;
+
+-- Attended sessions of a coach still missing "What you worked on" (testing and cancellations need none).
+create or replace function public.undocumented_sessions(p_coach_id uuid)
+returns table (session_id uuid, session_date date, start_time time, format text, players text)
+language sql stable security definer set search_path = public as $$
+  select s.id, s.session_date, s.start_time, s.format,
+         (select string_agg(p.name, ', ' order by p.name) from public.session_players sp
+            join public.players p on p.id = sp.player_id where sp.session_id = s.id)
+    from public.sessions s
+   where s.coach_id = p_coach_id and not s.imported and s.outcome = 'attended'
+     and s.format in ('1:1', '2:1', '4:1', 'assessment', 'analysis')
+     and nullif(trim(s.topic), '') is null
+     and s.session_date <= public.today_sydney()
+     and s.session_date >= coalesce((select (value #>> '{}')::date from public.settings where key = 'docs_reminder_from'), date '2026-10-05')
+     and (public.is_admin() or p_coach_id = public.current_coach_id())
+   order by s.session_date, s.start_time
+$$;
+
+-- Notes for one session, from the list (no 30-day limit: catching up on documentation is always allowed).
+create or replace function public.save_session_notes(p_session_id uuid, p_topic text, p_observations text default null, p_improve text default null)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare v_s public.sessions%rowtype;
+begin
+  select * into v_s from public.sessions where id = p_session_id;
+  if not found then raise exception 'Session not found'; end if;
+  if not (public.is_admin() or v_s.coach_id = public.current_coach_id()) then raise exception 'You can only document your own sessions'; end if;
+  if nullif(trim(p_topic), '') is null then raise exception 'Add what you worked on'; end if;
+  update public.sessions
+     set topic = trim(p_topic),
+         observations = coalesce(nullif(trim(p_observations), ''), observations),
+         improve = coalesce(nullif(trim(p_improve), ''), improve)
+   where id = p_session_id;
+end $$;
+
+-- Training videos due: one per player, for the player's main coach (or the last coach if none).
+-- Next due 4 to 6 weeks after the last clip (the first round counts from 18 October), varied per player.
+create or replace function public.videos_due(p_coach_id uuid)
+returns table (player_id uuid, name text, due_on date, last_clip date, drive_folder_id text)
+language sql stable security definer set search_path = public as $$
+  with recent as (
+    select sp.player_id, max(s.session_date) as last_session,
+           (array_agg(s.coach_id order by s.session_date desc))[1] as last_coach
+      from public.sessions s join public.session_players sp on sp.session_id = s.id
+     where s.outcome = 'attended' and not s.imported and s.session_date >= public.today_sydney() - 42
+       and s.format in ('1:1', '2:1', '4:1')
+     group by sp.player_id
+  ), base as (
+    select p.id, p.name, p.drive_folder_id, coalesce(p.main_coach_id, r.last_coach) as coach_id,
+           (select max(c.created_at at time zone 'Australia/Sydney')::date from public.drive_clips c where c.player_id = p.id) as last_clip
+      from public.players p join recent r on r.player_id = p.id
+     where p.active
+  )
+  select b.id, b.name,
+         greatest(coalesce(b.last_clip, (select (value #>> '{}')::date from public.settings where key = 'videos_from'))
+                  , coalesce((select (value #>> '{}')::date from public.settings where key = 'videos_from'), date '2026-10-18'))
+           + 28 + (abs(hashtext(b.id::text || coalesce(b.last_clip::text, ''))) % 15) as due_on,
+         b.last_clip, b.drive_folder_id
+    from base b
+   where b.coach_id = p_coach_id and (public.is_admin() or p_coach_id = public.current_coach_id())
+   order by 3, 2
+$$;
+
+-- ---------- admin hours ----------
+create table if not exists public.admin_hours (
+  id         uuid primary key default gen_random_uuid(),
+  coach_id   uuid not null references public.coaches(id),
+  work_date  date not null,
+  hours      numeric(4,2) not null check (hours > 0 and hours <= 12 and hours * 4 = round(hours * 4)),
+  rate       numeric(10,2) not null,
+  note       text,
+  created_by uuid,
+  created_at timestamptz not null default now()
+);
+alter table public.admin_hours enable row level security;
+drop policy if exists admin_hours_read on public.admin_hours;
+create policy admin_hours_read on public.admin_hours for select to authenticated
+  using (public.is_admin() or coach_id = public.current_coach_id());
+grant select on public.admin_hours to authenticated;
+
+alter table public.invoice_lines add column if not exists admin_hours_id uuid;
+
+create or replace function public.add_admin_hours(p_work_date date, p_hours numeric, p_note text default null, p_coach_id uuid default null)
+returns uuid
+language plpgsql security definer set search_path = public as $$
+declare v_coach uuid := coalesce(case when public.is_admin() then p_coach_id end, public.current_coach_id()); v_id uuid;
+begin
+  if v_coach is null then raise exception 'Sign in as a coach'; end if;
+  if (select salaried from public.coaches where id = v_coach) then raise exception 'Salaried coaches do not invoice admin hours'; end if;
+  if p_work_date > public.today_sydney() then raise exception 'Admin hours can only be added once they are done'; end if;
+  if p_hours is null or p_hours <= 0 or p_hours > 12 or p_hours * 4 <> round(p_hours * 4) then
+    raise exception 'Hours in quarter steps, for example 1, 1.5 or 2.25';
+  end if;
+  insert into public.admin_hours (coach_id, work_date, hours, rate, note, created_by)
+  values (v_coach, p_work_date, p_hours,
+          coalesce((select (value #>> '{}')::numeric from public.settings where key = 'admin_hour_rate'), 30),
+          nullif(trim(p_note), ''), auth.uid())
+  returning id into v_id;
+  return v_id;
+end $$;
+
+-- Removable until it is on an invoice Jan has paid (an unpaid invoice is then updated by the coach).
+create or replace function public.remove_admin_hours(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare v public.admin_hours%rowtype;
+begin
+  select * into v from public.admin_hours where id = p_id;
+  if not found then raise exception 'Not found'; end if;
+  if not (public.is_admin() or v.coach_id = public.current_coach_id()) then raise exception 'You can only remove your own hours'; end if;
+  if exists (select 1 from public.invoice_lines il join public.coach_invoices ci on ci.id = il.invoice_id
+              where il.admin_hours_id = p_id) then
+    raise exception 'These hours are already on an invoice. Ask Jan to change it';
+  end if;
+  delete from public.admin_hours where id = p_id;
+end $$;
+
+revoke execute on function public.undocumented_sessions(uuid), public.save_session_notes(uuid, text, text, text),
+  public.videos_due(uuid), public.add_admin_hours(date, numeric, text, uuid), public.remove_admin_hours(uuid) from public, anon;
+grant execute on function public.undocumented_sessions(uuid), public.save_session_notes(uuid, text, text, text),
+  public.videos_due(uuid), public.add_admin_hours(date, numeric, text, uuid), public.remove_admin_hours(uuid),
+  public.docs_required_from() to authenticated;
 
 drop function if exists public.invoice_draft(uuid, date);
 create function public.invoice_draft(p_coach_id uuid, p_until date)
 returns table (session_id uuid, line_date date, description text, amount numeric, is_correction boolean, no_rate boolean,
-               planned_kind text, planned_ref uuid, planned_date date)
+               planned_kind text, planned_ref uuid, planned_date date, admin_hours_id uuid)
 language sql stable security invoker set search_path = public as $$
   with cur as (
     select cp.session_id, cp.session_date, cp.players, cp.format, cp.outcome, cp.pay, cp.cash_kept,
@@ -94,7 +206,7 @@ language sql stable security invoker set search_path = public as $$
            coalesce(cur.net, 0) - coalesce(b.amount, 0) as amount,
            b.session_id is not null as is_correction,
            cur.session_id is not null and cur.pay is null as no_rate,
-           null::text as planned_kind, null::uuid as planned_ref, null::date as planned_date
+           null::text as planned_kind, null::uuid as planned_ref, null::date as planned_date, null::uuid as admin_hours_id
       from cur
       full join billed b on b.session_id = cur.session_id
      where (cur.session_id is null and b.amount <> 0)
@@ -103,7 +215,7 @@ language sql stable security invoker set search_path = public as $$
   -- paid in advance, but taken off the calendar before it happened
   removed as (
     select null::uuid, p.line_date, 'Correction: planned session taken off the calendar', -p.amount, true, false,
-           p.kind, p.ref, p.pdate
+           p.kind, p.ref, p.pdate, null::uuid
       from planned p
      where p.resolved is null and p.gone and p.amount <> 0
   ),
@@ -117,26 +229,30 @@ language sql stable security invoker set search_path = public as $$
              || coalesce(', ' || c.players, ''),
            coalesce(public.coach_rate(p_coach_id, c.format), 0), false,
            public.coach_rate(p_coach_id, c.format) is null,
-           c.kind, c.ref_id, case when c.kind = 'regular' then c.plan_date else c.session_date end
+           c.kind, c.ref_id, case when c.kind = 'regular' then c.plan_date else c.session_date end, null::uuid
       from public.calendar(p_until + 1, p_until + (7 - extract(isodow from p_until)::int)) c
      where (select invoice_planned from public.coaches where id = p_coach_id)
        and c.coach_id = p_coach_id and c.kind in ('regular', 'once') and c.session_id is null
        and not exists (select 1 from planned p where p.kind = c.kind and p.ref = c.ref_id
                          and (c.kind = 'once' or p.pdate = c.plan_date))
+  ),
+  -- admin hours not on an invoice yet
+  admin as (
+    select null::uuid, a.work_date,
+           'Admin: ' || rtrim(rtrim(a.hours::text, '0'), '.') || ' h at $' || trim(to_char(a.rate, 'FM9990.00'))
+             || coalesce(' (' || nullif(trim(a.note), '') || ')', ''),
+           round(a.hours * a.rate, 2), false, false, null::text, null::uuid, null::date, a.id
+      from public.admin_hours a
+     where a.coach_id = p_coach_id and a.work_date <= p_until
+       and not exists (select 1 from public.invoice_lines il where il.admin_hours_id = a.id)
   )
   select * from logged
   union all select * from removed
   union all select * from upcoming
+  union all select * from admin
   order by 2, 3
 $$;
 grant execute on function public.invoice_draft(uuid, date) to authenticated;
-
--- The week an invoice covers: to Sunday for a Friday-paid coach, otherwise to the invoice date.
-create or replace function public.invoice_period_end(p_coach_id uuid, p_until date) returns date
-language sql stable set search_path = public as $$
-  select case when (select invoice_planned from public.coaches where id = p_coach_id)
-              then p_until + (7 - extract(isodow from p_until)::int) else p_until end
-$$;
 
 create or replace function public.submit_invoice(p_coach_id uuid, p_until date)
 returns uuid
@@ -165,6 +281,10 @@ begin
     end if;
   end if;
 
+  if not public.is_admin() and exists (select 1 from public.undocumented_sessions(p_coach_id) u where u.session_date >= public.docs_required_from() and u.session_date <= p_until) then
+    raise exception 'Add "What you worked on" for % session(s) first. They are listed under Documentation to do', (select count(*) from public.undocumented_sessions(p_coach_id) u where u.session_date >= public.docs_required_from() and u.session_date <= p_until);
+  end if;
+
   if exists (select 1 from public.invoice_draft(p_coach_id, p_until) d where d.no_rate) then
     raise exception 'Some session types have no pay rate yet. Ask Jan to set it on the Team page';
   end if;
@@ -182,8 +302,8 @@ begin
           nullif((select value #>> '{}' from public.settings where key = 'business_abn'), ''),
           auth.uid())
   returning id into v_id;
-  insert into public.invoice_lines (invoice_id, session_id, line_date, description, amount, is_correction, planned_kind, planned_ref, planned_date)
-  select v_id, d.session_id, d.line_date, d.description, d.amount, d.is_correction, d.planned_kind, d.planned_ref, d.planned_date
+  insert into public.invoice_lines (invoice_id, session_id, line_date, description, amount, is_correction, planned_kind, planned_ref, planned_date, admin_hours_id)
+  select v_id, d.session_id, d.line_date, d.description, d.amount, d.is_correction, d.planned_kind, d.planned_ref, d.planned_date, d.admin_hours_id
     from public.invoice_draft(p_coach_id, p_until) d;
   return v_id;
 end $$;
@@ -214,6 +334,10 @@ begin
   v_until := least(public.today_sydney(), v_inv.period_end + (7 - extract(isodow from v_inv.period_end)::int));
   delete from public.invoice_lines where invoice_id = p_invoice_id;
 
+  if not public.is_admin() and exists (select 1 from public.undocumented_sessions(v_inv.coach_id) u where u.session_date >= public.docs_required_from() and u.session_date <= v_until) then
+    raise exception 'Add "What you worked on" for % session(s) first. They are listed under Documentation to do', (select count(*) from public.undocumented_sessions(v_inv.coach_id) u where u.session_date >= public.docs_required_from() and u.session_date <= v_until);
+  end if;
+
   if exists (select 1 from public.invoice_draft(v_inv.coach_id, v_until) d where d.no_rate) then
     raise exception 'Some session types have no pay rate yet. Ask Jan to set it on the Team page';
   end if;
@@ -231,8 +355,8 @@ begin
          submitted_at = now(),
          submitted_by = auth.uid()
    where id = p_invoice_id;
-  insert into public.invoice_lines (invoice_id, session_id, line_date, description, amount, is_correction, planned_kind, planned_ref, planned_date)
-  select p_invoice_id, d.session_id, d.line_date, d.description, d.amount, d.is_correction, d.planned_kind, d.planned_ref, d.planned_date
+  insert into public.invoice_lines (invoice_id, session_id, line_date, description, amount, is_correction, planned_kind, planned_ref, planned_date, admin_hours_id)
+  select p_invoice_id, d.session_id, d.line_date, d.description, d.amount, d.is_correction, d.planned_kind, d.planned_ref, d.planned_date, d.admin_hours_id
     from public.invoice_draft(v_inv.coach_id, v_until) d;
   return p_invoice_id;
 end $$;

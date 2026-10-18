@@ -90,7 +90,7 @@ export type CoachInvoice = {
   submitted_at: string; paid_at: string | null;
 };
 
-export type InvoiceLine = { session_id: string | null; line_date: string; description: string; amount: number; is_correction: boolean; no_rate?: boolean };
+export type InvoiceLine = { session_id: string | null; line_date: string; description: string; amount: number; is_correction: boolean; no_rate?: boolean; admin_hours_id?: string | null };
 
 export const invoiceNo = (i: { coach_name: string; number: number }) =>
   `${i.coach_name.toUpperCase().replace(/[^A-Z]/g, '')}-${String(i.number).padStart(4, '0')}`;

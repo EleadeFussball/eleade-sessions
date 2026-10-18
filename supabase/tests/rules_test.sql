@@ -1221,6 +1221,68 @@ select pg_temp.check('a planned session that happened is not paid twice, the oth
 select pg_temp.check('other coaches still invoice only what is logged',
   not exists (select 1 from public.invoice_draft('00000000-0000-0000-0000-0000000000c4', pg_temp.last_sun() - 2) where description like 'Planned:%'));
 
+-- ---------- documentation, training videos, admin hours ----------
+reset role;
+update public.settings set value = to_jsonb((public.today_sydney() - 30)::text) where key = 'docs_reminder_from';
+update public.settings set value = to_jsonb((public.today_sydney() - 3)::text) where key = 'docs_required_from';
+insert into public.sessions (id, session_date, coach_id, format, outcome, logged_at, topic) values
+  ('00000000-0000-0000-0000-0000000d0c01', public.today_sydney() - 1, '00000000-0000-0000-0000-0000000000c9', '1:1', 'attended', now(), null),
+  ('00000000-0000-0000-0000-0000000d0c02', public.today_sydney() - 10, '00000000-0000-0000-0000-0000000000c9', '1:1', 'attended', now(), ' '),
+  ('00000000-0000-0000-0000-0000000d0c03', public.today_sydney() - 1, '00000000-0000-0000-0000-0000000000c9', '1:1', 'cancelled_late', now(), null);
+insert into public.session_players (session_id, player_id) values
+  ('00000000-0000-0000-0000-0000000d0c01', '00000000-0000-0000-0000-0000000000b1'),
+  ('00000000-0000-0000-0000-0000000d0c02', '00000000-0000-0000-0000-0000000000b1'),
+  ('00000000-0000-0000-0000-0000000d0c03', '00000000-0000-0000-0000-0000000000b1');
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a8', 'freddie@test');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a8';
+select pg_temp.check('the coach sees attended sessions without notes (old ones too, not cancellations)',
+  (select count(*) = 2 from public.undocumented_sessions('00000000-0000-0000-0000-0000000000c9')
+    where session_id in ('00000000-0000-0000-0000-0000000d0c01', '00000000-0000-0000-0000-0000000d0c02')));
+select public.add_admin_hours(public.today_sydney() - 1, 1.5, 'Planning') as ah \gset
+do $$ begin
+  begin
+    perform public.add_admin_hours(public.today_sydney(), 1.3);
+    perform pg_temp.check('admin hours go in quarter hours', false);
+  exception when others then perform pg_temp.check('admin hours go in quarter hours', sqlerrm like '%quarter%');
+  end;
+  begin
+    perform public.submit_invoice('00000000-0000-0000-0000-0000000000c9', public.today_sydney());
+    perform pg_temp.check('no invoice while a recent session has no notes', false);
+  exception when others then perform pg_temp.check('no invoice while a recent session has no notes', sqlerrm like '%What you worked on%1 session%');
+  end;
+end $$;
+select pg_temp.check('admin hours appear on the draft at $30 an hour',
+  (select amount = 45 and description like 'Admin: 1.5 h%Planning%' from public.invoice_draft('00000000-0000-0000-0000-0000000000c9', public.today_sydney()) where admin_hours_id = :'ah'));
+select public.save_session_notes('00000000-0000-0000-0000-0000000d0c01', 'Weak foot finishing', 'Sharp', null);
+select pg_temp.check('notes saved from the list', (select topic = 'Weak foot finishing' and observations = 'Sharp' from public.sessions where id = '00000000-0000-0000-0000-0000000d0c01'));
+select public.submit_invoice('00000000-0000-0000-0000-0000000000c9', public.today_sydney()) as ahinv \gset
+select pg_temp.check('the invoice goes through once recent sessions are documented, with the admin hours on it',
+  exists (select 1 from public.invoice_lines where invoice_id = :'ahinv' and admin_hours_id = :'ah' and amount = 45));
+select pg_temp.check('admin hours are paid once', not exists (select 1 from public.invoice_draft('00000000-0000-0000-0000-0000000000c9', public.today_sydney()) where admin_hours_id is not null));
+do $$ begin
+  begin
+    perform public.remove_admin_hours((select id from public.admin_hours limit 1));
+    perform pg_temp.check('invoiced admin hours cannot be removed by the coach', false);
+  exception when others then perform pg_temp.check('invoiced admin hours cannot be removed by the coach', true);
+  end;
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a3';
+do $$ begin
+  begin
+    perform public.save_session_notes('00000000-0000-0000-0000-0000000d0c02', 'Sneaky');
+    perform pg_temp.check('a coach cannot document another coach''s session', false);
+  exception when others then perform pg_temp.check('a coach cannot document another coach''s session', true);
+  end;
+end $$;
+select pg_temp.check('other coaches do not see someone else''s documentation list',
+  (select count(*) = 0 from public.undocumented_sessions('00000000-0000-0000-0000-0000000000c9')));
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select pg_temp.check('training videos are due 4 to 6 weeks after the start',
+  (select bool_and(due_on between (select (value #>> '{}')::date from public.settings where key = 'videos_from') + 28
+                               and (select (value #>> '{}')::date from public.settings where key = 'videos_from') + 42)
+     from public.videos_due('00000000-0000-0000-0000-0000000000c2')));
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;

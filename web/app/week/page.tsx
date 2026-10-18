@@ -6,6 +6,8 @@ import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { addDays, fmtDate, fmtWeek, money, todayISO, weekStart, isoWeek } from '@/lib/dates';
 import { editDeadline, invoiceEditable, updateInvoice } from '@/lib/invoices';
+import { DocsTodo, DOCS_CHANGED } from '@/components/DocsTodo';
+import { AdminHours, removeAdminHours } from '@/components/AdminHours';
 import { FORMAT_LABEL, OUTCOME_LABEL, invoiceNo, type CoachInvoice, type Format, type InvoiceLine, type Outcome } from '@/lib/types';
 
 type PayRow = { session_id: string; session_date: string; coach_id: string; coach_name: string;
@@ -40,6 +42,7 @@ export default function WeekPage() {
     setInvoices((i.data as CoachInvoice[]) ?? []);
   }, [coachId, invoiceUntil]);
   useEffect(() => { loadInvoices(); }, [loadInvoices]);
+  useEffect(() => { window.addEventListener(DOCS_CHANGED, loadInvoices); return () => window.removeEventListener(DOCS_CHANGED, loadInvoices); }, [loadInvoices]);
   useEffect(() => { setReview(false); setTicked(false); setErr(''); }, [coachId, start]);
 
   // Bank details are needed before an invoice can be sent.
@@ -177,6 +180,7 @@ export default function WeekPage() {
       {!salaried && !loading && (
         <>
           <h2>Invoice</h2>
+          {mayAct && coachId && <DocsTodo key={coachId} coachId={coachId} title="Before you send: documentation to do" />}
           {thisWeeks.map((i) => (
             <div key={i.id}>
               <p><Link href={`/invoices/${i.id}`}>Invoice {invoiceNo(i)}</Link>, {money(i.total)}{' '}
@@ -196,7 +200,10 @@ export default function WeekPage() {
               <p className="hint">{thisWeeks.length ? 'Not on an invoice yet:' : 'Your invoice for this week will contain:'}</p>
               <table className="t">
                 <tbody>{draft.map((l, k) => (
-                  <tr key={k}><td>{fmtDate(l.line_date, true)}</td><td>{l.description}</td>
+                  <tr key={k}><td>{fmtDate(l.line_date, true)}</td><td>{l.description}
+                      {l.admin_hours_id && mayAct && <> <button type="button" className="linkbtn" onClick={async () => {
+                        const { error } = await removeAdminHours(l.admin_hours_id!); if (error) setErr(errorText(error)); else loadInvoices();
+                      }}>Remove</button></>}</td>
                     <td className="n">{l.no_rate ? 'Rate not set' : money(l.amount)}</td></tr>
                 ))}</tbody>
                 <tfoot><tr><td></td><td>Total (no GST)</td><td className="n">{money(draftTotal)}</td></tr></tfoot>
@@ -235,6 +242,7 @@ export default function WeekPage() {
               <p className="hint mt">Your invoice comes from these entries, so it always matches what Jan sees. Your ABN and bank details come from the <Link href="/account">Account</Link> page.</p>
             </>
           )}
+          {mayAct && coachId && <AdminHours coachId={coachId} onChanged={loadInvoices} />}
 
           {invoices.length > 0 && (
             <>

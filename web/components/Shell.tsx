@@ -89,6 +89,24 @@ export function Shell({ children }: { children: ReactNode }) {
     return () => { alive = false; };
   }, [coach, isAdmin, path]);
 
+  // Your week badge: sessions still to document and training videos due.
+  const [todo, setTodo] = useState(0);
+  useEffect(() => {
+    if (!coach) return;
+    let alive = true;
+    const count = () => Promise.all([
+      supabase.rpc('undocumented_sessions', { p_coach_id: coach.id }),
+      supabase.rpc('videos_due', { p_coach_id: coach.id }),
+    ]).then(([d, v]) => {
+      const today = todayISO();
+      if (alive) setTodo(((d.data as unknown[]) ?? []).length + ((v.data as { due_on: string }[]) ?? []).filter((x) => x.due_on <= today).length);
+    });
+    count();
+    window.addEventListener('eleade:docs-changed', count);
+    window.addEventListener('eleade:clip-saved', count);
+    return () => { alive = false; window.removeEventListener('eleade:docs-changed', count); window.removeEventListener('eleade:clip-saved', count); };
+  }, [coach, path]);
+
   useEffect(() => {
     if (!loading && !session && !isLogin) router.replace('/login');
   }, [loading, session, isLogin, router]);
@@ -146,6 +164,7 @@ export function Shell({ children }: { children: ReactNode }) {
                 aria-current={isOn(t.href) ? 'page' : undefined}>
             {t.label}
             {t.href === '/admin' && invoicesWaiting > 0 && <span className="tab-badge" aria-label={`${invoicesWaiting} invoices waiting`}>{invoicesWaiting}</span>}
+            {t.href === '/' && todo > 0 && <span className="tab-badge" aria-label={`${todo} to do`}>{todo}</span>}
             {t.href === '/enquiries' && newEnquiries > 0 && <span className="tab-badge" aria-label={`${newEnquiries} waiting`}>{newEnquiries}</span>}
           </Link>
         ))}
