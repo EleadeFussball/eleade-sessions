@@ -8,10 +8,12 @@ type Reminder = {
   key: string; kind: 'renewal' | 'monthly' | 'elle'; title: string; details: string; bill_to: string; item: string;
   amount_ex: number; gst: number; total: number; due_from: string; player_id: string | null; done_at: string | null; dismissed: boolean;
   package_name: string | null; sessions: number | null; analyses: number | null; pairs: number | null;
-  status: 'open' | 'waiting' | 'paid' | 'dismissed'; paid_at: string | null; ledger_id: string | null;
+  status: 'open' | 'waiting' | 'paid' | 'dismissed'; paid_at: string | null; ledger_id: string | null; payment_method: string | null;
 };
 const aud = (n: number) => `$${Number(n).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const n0 = (n: number | null) => Number(n ?? 0);
+const METHODS: [string, string][] = [['bank', 'Bank transfer'], ['stripe', 'Stripe'], ['cash', 'Cash']];
+const methodLabel = (m: string | null) => METHODS.find(([k]) => k === m)?.[1] ?? 'paid';
 const PRESETS = [
   { name: '5 pack', s: 5, a: 0, price: 650 },
   { name: '10 pack', s: 10, a: 1, price: 1250 },
@@ -90,7 +92,11 @@ export function InvoiceReminders() {
               <div className="sub">{r.kind !== 'elle' ? `${r.package_name ?? 'Package'}: ${contents(r)} · ` : ''}{aud(r.total)} inc GST · sent {fmtDate(r.done_at!.slice(0, 10))}</div>
               {r.ledger_id && <p className="hint">The credits are already on the player. They show as payment awaiting until you confirm it.</p>}
               <div className="row mt" style={{ flexWrap: 'wrap' }}>
-                <button type="button" className="btn small" disabled={busy === r.key} onClick={() => run(r.key, () => supabase.rpc('reminder_paid', { p_key: r.key, p_paid: true }))}>Paid</button>
+                <span className="hint" style={{ alignSelf: 'center' }}>Paid by:</span>
+                {METHODS.map(([m, label]) => (
+                  <button key={m} type="button" className="btn small" disabled={busy === r.key}
+                    onClick={() => run(r.key, () => supabase.rpc('reminder_paid', { p_key: r.key, p_paid: true, p_method: m }))}>{label}</button>
+                ))}
                 <button type="button" className="btn small ghost" disabled={busy === r.key} onClick={() => run(r.key, () => supabase.rpc('undo_reminder', { p_key: r.key }))}>Undo sent</button>
                 {r.player_id && <Link className="btn small ghost" href={`/players/${r.player_id}`}>Open player</Link>}
               </div>
@@ -99,13 +105,13 @@ export function InvoiceReminders() {
         </>
       )}
 
-      <p className="hint mt">Prices ex GST: 5 pack $650, 10 pack $1,250 (with 1 game analysis), monthly $650 (4 sessions and 1 game analysis). Tap Edit package to change what goes on the invoice. Sent in MYOB adds the package to the player straight away (payment awaiting), so there is no need to record it on the player page; tap Paid once the money is in. A renewal shows up when a family has one credit or less left; a recurring monthly package 5 days before the next month; Elle once the week is over.</p>
+      <p className="hint mt">Prices ex GST: 5 pack $650, 10 pack $1,250 (with 1 game analysis), monthly $650 (4 sessions and 1 game analysis). Tap Edit package to change what goes on the invoice. Sent in MYOB adds the package to the player straight away (payment awaiting), so there is no need to record it on the player page; once the money is in, tap how it was paid: bank transfer, Stripe or cash. A renewal shows up when a family has one credit or less left; a recurring monthly package 5 days before the next month; Elle once the week is over.</p>
       {done.length > 0 && (
         <>
           <button type="button" className="linkbtn" onClick={() => setShowDone(!showDone)}>{showDone ? 'Hide' : 'Show'} handled in the last 14 days ({done.length})</button>
           {showDone && <ul className="list mt">{done.map((r) => (
             <li key={r.key} className="session"><div className="head"><span>{r.title}</span><span className={r.status === 'dismissed' ? 'tag' : 'tag turf'}>{r.status === 'dismissed' ? 'Not needed' : 'Paid'}</span></div>
-              <div className="sub">{aud(r.total)} inc GST · {r.status === 'paid' && r.paid_at ? `paid ${fmtDate(r.paid_at.slice(0, 10))}` : `marked ${fmtDate(r.done_at!.slice(0, 10))}`} ·{' '}
+              <div className="sub">{aud(r.total)} inc GST · {r.status === 'paid' && r.paid_at ? `${methodLabel(r.payment_method)} ${fmtDate(r.paid_at.slice(0, 10))}` : `marked ${fmtDate(r.done_at!.slice(0, 10))}`} ·{' '}
                 {r.status === 'paid'
                   ? <button type="button" className="linkbtn" onClick={() => run(r.key, () => supabase.rpc('reminder_paid', { p_key: r.key, p_paid: false }))}>Not paid after all</button>
                   : <button type="button" className="linkbtn" onClick={() => run(r.key, () => supabase.rpc('undo_reminder', { p_key: r.key }))}>Undo</button>}</div></li>

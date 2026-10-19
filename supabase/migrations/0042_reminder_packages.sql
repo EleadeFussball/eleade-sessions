@@ -7,7 +7,8 @@ alter table public.invoice_reminders_done
   add column if not exists bill_to text, add column if not exists item text, add column if not exists player_id uuid,
   add column if not exists package_name text, add column if not exists sessions numeric, add column if not exists analyses numeric,
   add column if not exists pairs numeric, add column if not exists amount_ex numeric, add column if not exists ledger_id uuid,
-  add column if not exists due_from date, add column if not exists paid_at timestamptz;
+  add column if not exists due_from date, add column if not exists paid_at timestamptz,
+  add column if not exists payment_method text;
 -- reminders marked before this change were recorded and paid by hand
 update public.invoice_reminders_done set paid_at = done_at where paid_at is null and not dismissed and ledger_id is null and title is null;
 grant update on public.invoice_reminders_done to authenticated;
@@ -23,10 +24,11 @@ create policy invoice_reminder_edits_admin on public.invoice_reminder_edits for 
 grant select, insert, update, delete on public.invoice_reminder_edits to authenticated;
 
 drop function if exists public.invoice_reminders();
+drop function if exists public.reminder_paid(text, boolean, text);
 create function public.invoice_reminders()
 returns table(key text, kind text, title text, details text, bill_to text, item text,
               amount_ex numeric, gst numeric, total numeric, due_from date, player_id uuid, done_at timestamptz, dismissed boolean,
-              package_name text, sessions numeric, analyses numeric, pairs numeric, status text, paid_at timestamptz, ledger_id uuid)
+              package_name text, sessions numeric, analyses numeric, pairs numeric, status text, paid_at timestamptz, ledger_id uuid, payment_method text)
 language plpgsql stable security definer set search_path = public as $$
 begin
   if not public.is_admin() then raise exception 'Only Jan can see invoice reminders'; end if;
@@ -97,7 +99,7 @@ begin
       from r left join public.invoice_reminder_edits e on e.key = r.key
   )
   select c.key, c.kind, c.title, c.details, c.bill_to, c.item, c.amount_ex, round(c.amount_ex * 0.10, 2), round(c.amount_ex * 1.10, 2),
-         c.due_from, c.player_id, null::timestamptz, false, c.package_name, c.sessions, c.analyses, c.pairs, 'open'::text, null::timestamptz, null::uuid
+         c.due_from, c.player_id, null::timestamptz, false, c.package_name, c.sessions, c.analyses, c.pairs, 'open'::text, null::timestamptz, null::uuid, null::text
     from cur c
    where not exists (select 1 from public.invoice_reminders_done d where d.key = c.key)
   union all
@@ -106,7 +108,7 @@ begin
          round(coalesce(d.amount_ex, c.amount_ex, 0) * 1.10, 2), coalesce(d.due_from, c.due_from), coalesce(d.player_id, c.player_id),
          d.done_at, d.dismissed, coalesce(d.package_name, c.package_name), coalesce(d.sessions, c.sessions), coalesce(d.analyses, c.analyses),
          coalesce(d.pairs, c.pairs),
-         case when d.dismissed then 'dismissed' when d.paid_at is null then 'waiting' else 'paid' end, d.paid_at, d.ledger_id
+         case when d.dismissed then 'dismissed' when d.paid_at is null then 'waiting' else 'paid' end, d.paid_at, d.ledger_id, d.payment_method
     from public.invoice_reminders_done d left join cur c on c.key = d.key
    where (not d.dismissed and d.paid_at is null) or coalesce(d.paid_at, d.done_at) > now() - interval '14 days'
    order by 18 desc, 10, 3;
@@ -157,16 +159,23 @@ begin
   delete from public.invoice_reminder_edits where key = p_key;
 end $$;
 
-create or replace function public.reminder_paid(p_key text, p_paid boolean default true)
+-- Paid by bank transfer, Stripe or cash.
+create or replace function public.reminder_paid(p_key text, p_paid boolean default true, p_method text default 'bank')
 returns void language plpgsql security definer set search_path = public as $$
 declare d public.invoice_reminders_done%rowtype;
 begin
   if not public.is_admin() then raise exception 'Only Jan can do this'; end if;
+  if p_paid and coalesce(p_method, '') not in ('bank', 'stripe', 'cash', 'other') then raise exception 'Choose how it was paid'; end if;
   select * into d from public.invoice_reminders_done where key = p_key;
   if not found then raise exception 'Reminder not found'; end if;
-  update public.invoice_reminders_done set paid_at = case when p_paid then now() end where key = p_key;
+  update public.invoice_reminders_done
+     set paid_at = case when p_paid then now() end, payment_method = case when p_paid then p_method end
+   where key = p_key;
   if d.ledger_id is not null then
-    update public.credit_ledger set payment_status = case when p_paid then 'confirmed' else 'awaiting' end where id = d.ledger_id;
+    update public.credit_ledger
+       set payment_status = case when p_paid then 'confirmed' else 'awaiting' end,
+           payment_method = case when p_paid then p_method else payment_method end
+     where id = d.ledger_id;
   end if;
 end $$;
 
@@ -184,6 +193,6 @@ begin
 end $$;
 
 revoke execute on function public.save_reminder_package(text, text, numeric, numeric, numeric, numeric), public.send_reminder(text, boolean),
-  public.reminder_paid(text, boolean), public.undo_reminder(text) from public, anon;
+  public.reminder_paid(text, boolean, text), public.undo_reminder(text) from public, anon;
 grant execute on function public.save_reminder_package(text, text, numeric, numeric, numeric, numeric), public.send_reminder(text, boolean),
-  public.reminder_paid(text, boolean), public.undo_reminder(text) to authenticated;
+  public.reminder_paid(text, boolean, text), public.undo_reminder(text) to authenticated;

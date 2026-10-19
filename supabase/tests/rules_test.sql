@@ -1297,10 +1297,10 @@ select pg_temp.check('sent in MYOB: the package is recorded with payment awaitin
   (select status = 'waiting' and ledger_id is not null from public.invoice_reminders() where key = :'mkey')
   and (select sessions_delta = 6 and analyses_delta = 1 and amount_paid = 800 and payment_status = 'awaiting'
          from public.credit_ledger where id = (select ledger_id from public.invoice_reminders_done where key = :'mkey')));
-select public.reminder_paid(:'mkey');
+select public.reminder_paid(:'mkey', true, 'stripe');
 select pg_temp.check('confirming the payment marks the package paid',
   (select status = 'paid' from public.invoice_reminders() where key = :'mkey')
-  and (select payment_status = 'confirmed' from public.credit_ledger where id = (select ledger_id from public.invoice_reminders_done where key = :'mkey')));
+  and (select payment_status = 'confirmed' and payment_method = 'stripe' from public.credit_ledger where id = (select ledger_id from public.invoice_reminders_done where key = :'mkey')));
 select key as ekey from public.invoice_reminders() where kind = 'elle' and status = 'open' limit 1 \gset
 select public.send_reminder(:'ekey', true);
 select public.undo_reminder(:'ekey');
