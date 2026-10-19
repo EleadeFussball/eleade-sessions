@@ -6,7 +6,7 @@ import { usePlayers } from '@/lib/usePlayers';
 import { PlayerPicker } from '@/components/PlayerPicker';
 import { normaliseTime } from '@/lib/time';
 import { todayISO } from '@/lib/dates';
-import { FORMAT_LABEL, MAX_PLAYERS, OUTCOME_LABEL, PAYMENT_LABEL, placeField, type Format, type Outcome, type PaymentMethod } from '@/lib/types';
+import { FORMAT_LABEL, MAX_PLAYERS, OUTCOME_LABEL, PAYMENT_LABEL, placeField, FOCUS_LABEL, FOCUS_PLACEHOLDER, type Format, type Outcome, type PaymentMethod } from '@/lib/types';
 
 const FORMATS: Format[] = ['1:1', '2:1', '4:1', 'analysis', 'assessment', 'testing'];
 const OUTCOMES: Outcome[] = ['attended', 'cancelled_in_time', 'cancelled_late', 'no_show'];
@@ -65,6 +65,7 @@ export function EditSession({ sessionId, onDone, onCancel, onDelete }:
     const t = time.trim() ? normaliseTime(time) : '';
     if (time.trim() && !t) { setErr('Start time not recognised. Type it like 630, 6:30 or 1800.'); return; }
     if (ids.length === 0) { setErr('Pick at least one player.'); return; }
+    if (format === 'analysis' && outcome === 'attended' && (!location.trim() || !topic.trim())) { setErr('For a game analysis, add the opponent and the key focus points.'); return; }
     if ((format === '2:1' || format === '4:1') && ids.length < 2) { setErr(`A ${format} session needs at least 2 players. For one player, choose 1:1.`); return; }
     setBusy(true); setErr('');
     const { error } = await supabase.rpc('edit_session', {
@@ -133,9 +134,15 @@ export function EditSession({ sessionId, onDone, onCancel, onDelete }:
         </div>
       )}
       <label className="field"><span>{placeField(format).label}</span><input type="text" list={format === 'analysis' ? undefined : 'pitches'} value={location} placeholder={placeField(format).placeholder} onChange={(e) => setLocation(e.target.value)} /></label>
-      <label className="field"><span>What you worked on</span><textarea value={topic} onChange={(e) => setTopic(e.target.value)} /></label>
-      <label className="field"><span>How it went</span><textarea value={obs} onChange={(e) => setObs(e.target.value)} /></label>
-      <label className="field"><span>Next session</span><textarea value={improve} onChange={(e) => setImprove(e.target.value)} style={{ minHeight: 64 }} /></label>
+      {format === 'analysis' ? (
+        <label className="field"><span>{FOCUS_LABEL}</span><textarea value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={FOCUS_PLACEHOLDER} /></label>
+      ) : (
+        <>
+          <label className="field"><span>What you worked on</span><textarea value={topic} onChange={(e) => setTopic(e.target.value)} /></label>
+          <label className="field"><span>How it went</span><textarea value={obs} onChange={(e) => setObs(e.target.value)} /></label>
+          <label className="field"><span>Next session</span><textarea value={improve} onChange={(e) => setImprove(e.target.value)} style={{ minHeight: 64 }} /></label>
+        </>
+      )}
       <p className="hint">Credits and coach pay update automatically. If the session was already on an invoice, the difference appears as a correction on the next one.</p>
       {err && <div className="notice err" role="alert">{err}</div>}
       <div className="row" style={{ flexWrap: 'wrap' }}>

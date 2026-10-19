@@ -98,6 +98,9 @@ export const invoiceNo = (i: { coach_name: string; number: number }) =>
 /** Game analysis keeps the opponent in the location field. */
 export const placeLabel = (format: string, location: string | null | undefined) =>
   !location ? '' : format === 'analysis' ? `vs ${location}` : location;
+/** A game analysis is documented with its key focus points instead of the three session fields. */
+export const FOCUS_LABEL = 'Key focus points';
+export const FOCUS_PLACEHOLDER = 'e.g. Scanning before receiving, pressing triggers, 1v1 defending on the left';
 export const placeField = (format: string) => format === 'analysis'
   ? { label: 'Opponent', placeholder: 'e.g. Sydney FC U14' }
   : { label: 'Location', placeholder: 'e.g. Moore Park' };

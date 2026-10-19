@@ -11,7 +11,7 @@ import { useLastLocation } from '@/lib/useLastLocation';
 import { findPitch, loadPitches } from '@/lib/locations';
 import { normaliseTime } from '@/lib/time';
 import { todayISO, addDays, fmtDate, num } from '@/lib/dates';
-import { FORMAT_LABEL, OUTCOME_LABEL, OUTCOME_HINT, MAX_PLAYERS, PAYMENT_LABEL, placeField, type Format, type Outcome, type PaymentMethod, type PlayerBalance } from '@/lib/types';
+import { FORMAT_LABEL, OUTCOME_LABEL, OUTCOME_HINT, MAX_PLAYERS, PAYMENT_LABEL, placeField, FOCUS_LABEL, FOCUS_PLACEHOLDER, type Format, type Outcome, type PaymentMethod, type PlayerBalance } from '@/lib/types';
 
 const FORMATS: Format[] = ['1:1', '2:1', '4:1', 'analysis', 'assessment', 'testing'];
 const ASSESSMENT_HINT: Record<Outcome, string> = {
@@ -110,6 +110,7 @@ export default function LogPage() {
     if (!ids.length) { setErr('Pick the player first.'); return; }
     if ((format === '2:1' || format === '4:1') && ids.length < 2) { setErr(`A ${format} session needs at least 2 players.`); return; }
     if (time.trim() && !normaliseTime(time)) { setErr('Start time not recognised. Type it like 630, 6:30 or 1800.'); return; }
+    if (format === 'analysis' && showNotes && (!location.trim() || !topic.trim())) { setErr('For a game analysis, add the opponent and the key focus points.'); return; }
     setBusy(true);
     const { error } = await supabase.rpc('log_session', {
       p_session_date: date, p_coach_id: coachId || coach!.id, p_format: format, p_outcome: outcome,
@@ -256,7 +257,12 @@ export default function LogPage() {
           </label>
         </div>
 
-        {showNotes ? (
+        {showNotes && format === 'analysis' ? (
+          <label className="field">
+            <span>{FOCUS_LABEL}</span>
+            <textarea value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={FOCUS_PLACEHOLDER} />
+          </label>
+        ) : showNotes ? (
           <>
             <p className="hint">Tap the microphone on your keyboard to dictate. German or English both work.</p>
             <label className="field">

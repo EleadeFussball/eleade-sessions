@@ -53,7 +53,7 @@ export function SessionItem({ s, onChanged, showPlayers = false }: { s: SessionR
         <>
           {(s.topic || s.observations || s.improve) && (
             <dl>
-              {s.topic && <><dt>Worked on</dt><dd>{s.topic}</dd></>}
+              {s.topic && <><dt>{s.format === 'analysis' ? 'Key focus points' : 'Worked on'}</dt><dd>{s.topic}</dd></>}
               {s.observations && <><dt>How it went</dt><dd>{s.observations}</dd></>}
               {s.improve && <><dt>Next time</dt><dd>{s.improve}</dd></>}
             </dl>

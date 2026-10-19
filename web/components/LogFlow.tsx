@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/auth';
 import { usePlayers } from '@/lib/usePlayers';
 import { todayISO } from '@/lib/dates';
 import { canComplete, completeFrom, confirmEntry, type ScheduleEntry } from '@/lib/schedule';
-import { FORMAT_LABEL, MAX_PLAYERS, OUTCOME_LABEL, placeField, type Format, type Outcome } from '@/lib/types';
+import { FORMAT_LABEL, MAX_PLAYERS, OUTCOME_LABEL, placeField, FOCUS_LABEL, FOCUS_PLACEHOLDER, type Format, type Outcome } from '@/lib/types';
 import { PlayerPicker } from '@/components/PlayerPicker';
 import { StripeNote, useUnusedPayments } from '@/components/StripeNote';
 import { ClipButton } from '@/components/ClipUpload';
@@ -66,6 +66,7 @@ export function LogFlow({ o, onDone, onCancel }: { o: ScheduleEntry; onDone: () 
     setErr('');
     if (ids.length === 0) { setErr('Pick at least one player under More settings.'); return; }
     if ((format === '2:1' || format === '4:1') && ids.length < 2) { setErr(`A ${format} session needs 2 players. Add the other player under More settings, or choose 1:1.`); return; }
+    if (format === 'analysis' && attended && (!location.trim() || !topic.trim())) { setErr('For a game analysis, add the opponent and the key focus points.'); return; }
     if (ids.length > MAX_PLAYERS[format]) { setErr(`A ${FORMAT_LABEL[format]} session can have at most ${MAX_PLAYERS[format]} player${MAX_PLAYERS[format] === 1 ? '' : 's'}.`); return; }
     setBusy(true);
     const pay = showPay ? method : '';
@@ -133,8 +134,14 @@ export function LogFlow({ o, onDone, onCancel }: { o: ScheduleEntry; onDone: () 
       )}
 
       <div className="step">
-        <div className="step-h"><span className="step-n">{step()}</span>{attended ? 'Session notes' : 'Note'}</div>
-        {attended ? (
+        <div className="step-h"><span className="step-n">{step()}</span>{attended ? (format === 'analysis' ? 'Game analysis' : 'Session notes') : 'Note'}</div>
+        {attended && format === 'analysis' ? (
+          <>
+            <label className="field"><span>Opponent</span>
+              <input type="text" value={location} placeholder={place.placeholder} onChange={(e) => setLocation(e.target.value)} /></label>
+            <label className="field"><span>{FOCUS_LABEL}</span><textarea value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={FOCUS_PLACEHOLDER} /></label>
+          </>
+        ) : attended ? (
           <>
             <p className="hint">{o.prep ? 'Your plan is filled in. Change it if the session went differently.' : 'Tap the microphone on your keyboard to dictate. German or English both work.'}</p>
             <label className="field"><span>What you worked on</span><textarea value={topic} onChange={(e) => setTopic(e.target.value)} /></label>
@@ -163,7 +170,7 @@ export function LogFlow({ o, onDone, onCancel }: { o: ScheduleEntry; onDone: () 
 
       {!future && (
         <details className="more">
-          <summary>More settings: players, length, {place.label.toLowerCase()}</summary>
+          <summary>More settings: players, length{format === 'analysis' && attended ? '' : `, ${place.label.toLowerCase()}`}</summary>
           <div className="field">
             <span className="fieldlabel">{MAX_PLAYERS[format] === 1 ? 'Player' : `Players (up to ${MAX_PLAYERS[format]})`}</span>
             <PlayerPicker players={players} selected={ids} max={MAX_PLAYERS[format]} onChange={setIds}
@@ -179,8 +186,10 @@ export function LogFlow({ o, onDone, onCancel }: { o: ScheduleEntry; onDone: () 
               ))}
             </div>
           </div>
-          <label className="field"><span>{place.label}</span>
-            <input type="text" list={format === 'analysis' ? undefined : 'pitches'} value={location} placeholder={place.placeholder} onChange={(e) => setLocation(e.target.value)} /></label>
+          {!(format === 'analysis' && attended) && (
+            <label className="field"><span>{place.label}</span>
+              <input type="text" list={format === 'analysis' ? undefined : 'pitches'} value={location} placeholder={place.placeholder} onChange={(e) => setLocation(e.target.value)} /></label>
+          )}
           <p className="hint">To change the day or start time, go Back and use Move.</p>
         </details>
       )}
