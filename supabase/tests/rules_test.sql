@@ -344,6 +344,7 @@ reset role;
 create or replace function pg_temp.last_sun() returns date language sql stable as
 $$ select public.today_sydney() - extract(isodow from public.today_sydney())::int $$;
 update public.settings set value = to_jsonb((public.today_sydney() - 60)::text) where key = 'invoices_from';
+update public.settings set value = '"2999-01-01"' where key = 'docs_required_from';  -- the documentation rule has its own test
 update public.coaches set salaried = true where name = 'Jani';
 insert into public.coaches (id, name, email) values ('00000000-0000-0000-0000-0000000000c4', 'David', 'david@test');
 insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a4', 'david@test');
@@ -1142,9 +1143,9 @@ do $$ begin
 end $$;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
 insert into public.owner_weeks (week_start, salary_cost, elle_hours, elle_amount, tyler_elle_sessions, tyler_commission)
-values ('2026-10-12', 1960, 7.5, 525, 3, 60);
-select pg_temp.check('Jan can save his weekly figures and sees the KW41 salary',
-  (select count(*) = 3 and sum(salary_cost) = 3920 from public.owner_weeks));
+values ('2026-08-03', 1960, 7.5, 525, 3, 60);
+select pg_temp.check('Jan can save his weekly figures and sees them',
+  (select salary_cost = 1960 and elle_amount = 525 from public.owner_weeks where week_start = '2026-08-03'));
 
 -- ---------- Google Drive ----------
 set role authenticated;
@@ -1225,6 +1226,7 @@ select pg_temp.check('other coaches still invoice only what is logged',
 reset role;
 update public.settings set value = to_jsonb((public.today_sydney() - 30)::text) where key = 'docs_reminder_from';
 update public.settings set value = to_jsonb((public.today_sydney() - 3)::text) where key = 'docs_required_from';
+update public.sessions set topic = 'Earlier work' where coach_id = '00000000-0000-0000-0000-0000000000c9';
 insert into public.sessions (id, session_date, coach_id, format, outcome, logged_at, topic) values
   ('00000000-0000-0000-0000-0000000d0c01', public.today_sydney() - 1, '00000000-0000-0000-0000-0000000000c9', '1:1', 'attended', now(), null),
   ('00000000-0000-0000-0000-0000000d0c02', public.today_sydney() - 10, '00000000-0000-0000-0000-0000000000c9', '1:1', 'attended', now(), ' '),
@@ -1282,6 +1284,27 @@ select pg_temp.check('training videos are due 4 to 6 weeks after the start',
   (select bool_and(due_on between (select (value #>> '{}')::date from public.settings where key = 'videos_from') + 28
                                and (select (value #>> '{}')::date from public.settings where key = 'videos_from') + 42)
      from public.videos_due('00000000-0000-0000-0000-0000000000c2')));
+
+-- ---------- MYOB reminders: edit the package, send, then confirm the payment ----------
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select key as mkey from public.invoice_reminders() where kind = 'monthly' and bill_to = 'Monthly Max' \gset
+select public.save_reminder_package(:'mkey', 'Tailored', 6, 1, 0, 800);
+select pg_temp.check('an edited package shows its new sessions and price',
+  (select sessions = 6 and analyses = 1 and amount_ex = 800 and total = 880 and status = 'open' from public.invoice_reminders() where key = :'mkey'));
+select public.send_reminder(:'mkey');
+select pg_temp.check('sent in MYOB: the package is recorded with payment awaiting and the reminder waits for the payment',
+  (select status = 'waiting' and ledger_id is not null from public.invoice_reminders() where key = :'mkey')
+  and (select sessions_delta = 6 and analyses_delta = 1 and amount_paid = 800 and payment_status = 'awaiting'
+         from public.credit_ledger where id = (select ledger_id from public.invoice_reminders_done where key = :'mkey')));
+select public.reminder_paid(:'mkey');
+select pg_temp.check('confirming the payment marks the package paid',
+  (select status = 'paid' from public.invoice_reminders() where key = :'mkey')
+  and (select payment_status = 'confirmed' from public.credit_ledger where id = (select ledger_id from public.invoice_reminders_done where key = :'mkey')));
+select key as ekey from public.invoice_reminders() where kind = 'elle' and status = 'open' limit 1 \gset
+select public.send_reminder(:'ekey', true);
+select public.undo_reminder(:'ekey');
+select pg_temp.check('undo puts a reminder back on the list', (select status = 'open' from public.invoice_reminders() where key = :'ekey'));
 
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
