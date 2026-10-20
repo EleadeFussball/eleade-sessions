@@ -30,7 +30,18 @@ export type PlayerBalance = {
   last_session: string | null;
   last_purchase: string | null;
   next_expiry: string | null;
+  payment_plan?: PaymentPlan;
+  casual_method?: 'stripe' | 'cash' | 'bank' | null;
 };
+
+export type PaymentPlan = 'monthly' | 'package' | 'weekly' | 'casual';
+export const PLAN_LABEL: Record<PaymentPlan, string> = {
+  monthly: 'Monthly package', package: 'Casual package', weekly: 'Pays weekly', casual: 'Casual',
+};
+export const CASUAL_METHOD_LABEL: Record<'stripe' | 'cash' | 'bank', string> = { stripe: 'Stripe', cash: 'Cash', bank: 'Bank transfer' };
+/** Short tag for players without credits. */
+export const planTag = (p: { payment_plan?: PaymentPlan; casual_method?: string | null }) =>
+  p.payment_plan === 'casual' ? `Casual${p.casual_method ? `, ${CASUAL_METHOD_LABEL[p.casual_method as 'stripe']}` : ''}` : 'Pays weekly';
 
 export type SessionRow = {
   id: string;

@@ -4,9 +4,10 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { usePlayers, creditClass } from '@/lib/usePlayers';
 import { fmtDate, num } from '@/lib/dates';
+import { planTag } from '@/lib/types';
 import { errorText } from '@/lib/supabase';
 
-type Filter = 'all' | 'mine' | 'low' | 'weekly';
+type Filter = 'all' | 'mine' | 'low' | 'monthly' | 'weekly' | 'casual';
 
 export default function PlayersPage() {
   const { coach, coaches } = useAuth();
@@ -26,7 +27,9 @@ export default function PlayersPage() {
       if (s && !p.name.toLowerCase().includes(s)) return false;
       if (filter === 'mine') return p.main_coach_id === coach?.id;
       if (filter === 'low') return p.billing_model === 'package' && Number(p.sessions_left ?? 0) <= 2;
-      if (filter === 'weekly') return p.billing_model === 'pay_per_session';
+      if (filter === 'monthly') return p.payment_plan === 'monthly';
+      if (filter === 'weekly') return p.payment_plan === 'weekly';
+      if (filter === 'casual') return p.payment_plan === 'casual';
       return true;
     });
   }, [players, q, filter, coach]);
@@ -36,7 +39,9 @@ export default function PlayersPage() {
     all: activeNow.length,
     mine: activeNow.filter((p) => p.main_coach_id === coach?.id).length,
     low: activeNow.filter((p) => p.billing_model === 'package' && Number(p.sessions_left ?? 0) <= 2).length,
-    weekly: activeNow.filter((p) => p.billing_model === 'pay_per_session').length,
+    monthly: activeNow.filter((p) => p.payment_plan === 'monthly').length,
+    weekly: activeNow.filter((p) => p.payment_plan === 'weekly').length,
+    casual: activeNow.filter((p) => p.payment_plan === 'casual').length,
   };
 
   return (
@@ -64,7 +69,7 @@ export default function PlayersPage() {
       </details>
       <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search players" aria-label="Search players" />
       <div className="seg mt" role="group" aria-label="Filter">
-        {([['all', 'All'], ['mine', 'My players'], ['low', '2 or fewer left'], ['weekly', 'Pays weekly']] as [Filter, string][]).map(([k, l]) => (
+        {([['all', 'All'], ['mine', 'My players'], ['low', '2 or fewer left'], ['monthly', 'Monthly'], ['weekly', 'Pays weekly'], ['casual', 'Casual']] as [Filter, string][]).map(([k, l]) => (
           <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}>{l} ({counts[k]})</button>
         ))}
       </div>
@@ -97,7 +102,7 @@ export default function PlayersPage() {
                       )}
                       <span className="score ga" aria-label={`${num(p.analyses_left)} game analyses left`}>{num(p.analyses_left)}<small>analysis</small></span>
                     </span>
-                  ) : <span className="score none">Pays weekly</span>}
+                  ) : <span className="score none">{planTag(p)}</span>}
                 </Link>
               </li>
             );

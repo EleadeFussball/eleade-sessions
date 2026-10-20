@@ -47,11 +47,19 @@ export function LogFlow({ o, onDone, onCancel }: { o: ScheduleEntry; onDone: () 
   // The player's standard way of paying: package credit, or the weekly payment for weekly payers.
   const standard = useMemo(() => {
     if (format === 'assessment') return 'Not paid yet';
-    const kinds = new Set(ids.map((id) => players.find((p) => p.player_id === id)?.billing_model).filter(Boolean));
-    if (kinds.size === 1 && kinds.has('pay_per_session')) return 'Weekly payment';
-    if (kinds.size > 1) return 'Package or weekly';
+    const plans = new Set(ids.map((id) => players.find((p) => p.player_id === id)?.payment_plan ?? 'package'));
+    if (plans.size === 1 && plans.has('weekly')) return 'Weekly payment';
+    if (plans.size === 1 && plans.has('casual')) return 'Not paid yet';
+    if (plans.size > 1) return 'Package or weekly';
     return 'Package credit';
   }, [format, ids, players]);
+  // Casual players: their set way of paying is preselected.
+  const casualKey = useMemo(() => {
+    const ps = ids.map((id) => players.find((p) => p.player_id === id));
+    return ps.length > 0 && ps.every((p) => p?.payment_plan === 'casual' && p.casual_method) && new Set(ps.map((p) => p!.casual_method)).size === 1
+      ? ps[0]!.casual_method! : '';
+  }, [ids, players]);
+  useEffect(() => { if (casualKey && format !== 'assessment' && format !== 'testing') setMethod(casualKey); }, [casualKey, format]);
 
   const attended = outcome === 'attended';
   const showType = !future;

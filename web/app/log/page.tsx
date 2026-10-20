@@ -58,6 +58,18 @@ export default function LogPage() {
       setPayMethod('stripe');
     }
   }, [ids, unused, format, outcome, payMethod]);
+  // Casual players: their set way of paying is preselected.
+  const casualPick = useRef('');
+  useEffect(() => {
+    const ps = ids.map((id) => players.find((p) => p.player_id === id)).filter(Boolean) as PlayerBalance[];
+    const key = ids.join(',');
+    if (!key || casualPick.current === key) return;
+    if (ps.length && ps.every((p) => p.payment_plan === 'casual' && p.casual_method) && new Set(ps.map((p) => p.casual_method)).size === 1
+        && format !== 'testing' && outcome !== 'cancelled_in_time') {
+      casualPick.current = key;
+      setPayMethod(ps[0].casual_method as PaymentMethod);
+    }
+  }, [ids, players, format, outcome]);
   useEffect(() => {
     supabase.from('sessions').select('location').not('location', 'is', null).neq('format', 'analysis')
       .order('session_date', { ascending: false }).limit(400)
@@ -118,7 +130,7 @@ export default function LogPage() {
       p_topic: showNotes ? topic.trim() || null : null,
       p_observations: obs.trim() || null,
       p_improve: showNotes ? improve.trim() || null : null,
-      p_payment_method: payMethod && (isAssessment || payMethod === 'cash' || payMethod === 'stripe') && outcome !== 'cancelled_in_time' ? payMethod : null,
+      p_payment_method: payMethod && outcome !== 'cancelled_in_time' ? payMethod : null,
     });
     setBusy(false);
     if (error) { setErr(errorText(error)); return; }
@@ -226,6 +238,11 @@ export default function LogPage() {
               <button type="button" aria-pressed={payMethod === 'stripe'} onClick={() => setPayMethod(payMethod === 'stripe' ? '' : 'stripe')}>
                 Paid by Stripe
               </button>
+              {chosen.some((p) => p.payment_plan === 'casual') && (
+                <button type="button" aria-pressed={payMethod === 'bank'} onClick={() => setPayMethod(payMethod === 'bank' ? '' : 'bank')}>
+                  Bank transfer
+                </button>
+              )}
             </div>
             {payMethod === 'stripe' && <StripeNote playerIds={ids} />}
             {payMethod === 'cash' && (coach?.salaried

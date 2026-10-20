@@ -11,12 +11,13 @@ import { RegularSessions } from '@/components/RegularSessions';
 import { AssessmentPayment } from '@/components/AssessmentPayment';
 import { EnquiryInfo } from '@/components/EnquiryInfo';
 import { fmtDate, fromISO, money, num, toISO, todayISO } from '@/lib/dates';
-import { PAYMENT_LABEL, type PaymentMethod, type PlayerBalance, type SessionRow } from '@/lib/types';
+import { PAYMENT_LABEL, type PaymentMethod, type PlayerBalance, type SessionRow, PLAN_LABEL, CASUAL_METHOD_LABEL, type PaymentPlan } from '@/lib/types';
 
 type Player = {
   id: string; name: string; family: string | null; billing_model: 'package' | 'pay_per_session';
   session_price: number | null; main_coach_id: string | null; active: boolean; opening_confirmed: boolean; profile_notes: string | null; drive_folder_id?: string | null;
   created_by: string | null; monthly_recurring?: boolean; pair_price?: number | null;
+  payment_plan?: PaymentPlan; casual_method?: 'stripe' | 'cash' | 'bank' | null;
 };
 type Ledger = { id: string; kind: string; sessions_delta: number; analyses_delta: number; pairs_delta: number; package_name: string | null;
   amount_paid: number | null; reason: string; effective_date: string; expires_on: string | null; player_id: string;
@@ -149,7 +150,9 @@ export default function PlayerPage() {
           {cls === 'out' && <div className="notice warn">No credits left. Jan needs to talk to the parents about the next package.</div>}
         </>
       ) : (
-        <div className="notice">Pays per session by weekly bank transfer{p.session_price ? `, ${money(p.session_price)} a session` : ''}. No credits to track.</div>
+        <div className="notice">{p.payment_plan === 'casual'
+          ? `Casual: pays each session on its own${p.casual_method ? ` by ${CASUAL_METHOD_LABEL[p.casual_method].toLowerCase()}` : ''}`
+          : 'Pays weekly by bank transfer'}{p.session_price ? `, ${money(p.session_price)} a session` : ''}. No credits to track.</div>
       )}
 
       {isAdmin && (
@@ -529,44 +532,45 @@ function RecordPackage({ playerId, name, billing, onSaved }: { playerId: string;
 
 /** How this player pays. Jan can change it at any time; credits and history are kept. */
 function PaymentSettings({ p, onSaved }: { p: Player; onSaved: () => void }) {
-  const [model, setModel] = useState(p.billing_model);
+  const current: PaymentPlan = p.payment_plan ?? (p.billing_model === 'package' ? (p.monthly_recurring ? 'monthly' : 'package') : 'weekly');
+  const [plan, setPlan] = useState<PaymentPlan>(current);
+  const [method, setMethod] = useState<'stripe' | 'cash' | 'bank'>(p.casual_method ?? 'stripe');
   const [price, setPrice] = useState(p.session_price?.toString() ?? '');
   const [pairPrice, setPairPrice] = useState(p.pair_price?.toString() ?? '');
-  const [recurring, setRecurring] = useState(!!p.monthly_recurring);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
-  useEffect(() => { setModel(p.billing_model); setPrice(p.session_price?.toString() ?? ''); setPairPrice(p.pair_price?.toString() ?? ''); setRecurring(!!p.monthly_recurring); }, [p.billing_model, p.session_price, p.pair_price, p.monthly_recurring]);
+  useEffect(() => { setPlan(current); setMethod(p.casual_method ?? 'stripe'); setPrice(p.session_price?.toString() ?? ''); setPairPrice(p.pair_price?.toString() ?? ''); }, [current, p.casual_method, p.session_price, p.pair_price]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault(); setErr(''); setMsg('');
     const { error } = await supabase.from('players').update({
-      billing_model: model, session_price: price.trim() ? Number(price) : null, pair_price: pairPrice.trim() ? Number(pairPrice) : null,
-      monthly_recurring: model === 'package' && recurring,
+      payment_plan: plan, casual_method: plan === 'casual' ? method : null,
+      session_price: price.trim() ? Number(price) : null, pair_price: pairPrice.trim() ? Number(pairPrice) : null,
     }).eq('id', p.id);
     if (error) setErr(errorText(error)); else { setMsg('Payment settings saved.'); onSaved(); }
   }
 
   return (
     <details className="panel">
-      <summary>Payment settings: {p.billing_model === 'package' ? 'Package' : 'Pays weekly'}</summary>
+      <summary>How {p.name.split(' ')[0]} pays: {PLAN_LABEL[current]}{current === 'casual' && p.casual_method ? `, ${CASUAL_METHOD_LABEL[p.casual_method]}` : ''}</summary>
       <form onSubmit={save}>
         <div className="seg" style={{ marginBottom: 12 }}>
-          <button type="button" aria-pressed={model === 'package'} onClick={() => setModel('package')}>Package</button>
-          <button type="button" aria-pressed={model === 'pay_per_session'} onClick={() => setModel('pay_per_session')}>Pays weekly</button>
+          {(['monthly', 'package', 'weekly', 'casual'] as PaymentPlan[]).map((k) => (
+            <button key={k} type="button" aria-pressed={plan === k} onClick={() => setPlan(k)}>{PLAN_LABEL[k]}</button>
+          ))}
         </div>
-        {model === 'package' ? (
+        {plan === 'monthly' && <p className="hint"><strong>Monthly package:</strong> 4 sessions and 1 game analysis a month ($650 + GST). The MYOB reminder comes 5 days before each new month. Credits count down with each session.</p>}
+        {plan === 'package' && <p className="hint"><strong>Casual package:</strong> a 5 or 10 pack (or tailored). Credits count down with each session, and the MYOB reminder comes when one credit or less is left.</p>}
+        {plan === 'weekly' && <p className="hint"><strong>Pays weekly:</strong> no credits. Sessions are added up each week and paid by bank transfer; you mark the week as paid on the Admin page.</p>}
+        {plan === 'casual' && (
           <>
-            <p className="hint"><strong>Package:</strong> prepaid credits that count down with each session. Choose 5 pack, 10 pack, Monthly or a tailored package under &quot;Record a package bought&quot;. The payment is recorded as Stripe, bank transfer, cash or other.</p>
-            <label className="check">
-              <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} />
-              <span>Recurring monthly package: remind me to invoice the next month ($650 + GST) 5 days before it starts.</span>
-            </label>
-          </>
-        ) : (
-          <>
-            <p className="hint"><strong>Pays weekly:</strong> no credits. Sessions are added up each week and paid by bank transfer, and you mark the week as paid on the Admin page.</p>
+            <p className="hint"><strong>Casual:</strong> no credits. Each session is paid on its own; this way of paying is preselected when a coach logs the session.</p>
+            <div className="seg" style={{ marginBottom: 12 }}>
+              {(['stripe', 'cash', 'bank'] as const).map((m) => <button key={m} type="button" aria-pressed={method === m} onClick={() => setMethod(m)}>{CASUAL_METHOD_LABEL[m]}</button>)}
+            </div>
           </>
         )}
+        {plan !== current && <p className="hint">Changing how a player pays keeps all credits and history. Unused package credits carry over.</p>}
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <label className="field" style={{ flex: '1 1 140px' }}><span>1:1 price per session, ex GST</span>
             <input type="number" inputMode="decimal" value={price} placeholder="120" onChange={(e) => setPrice(e.target.value)} /></label>

@@ -1306,6 +1306,26 @@ select public.send_reminder(:'ekey', true);
 select public.undo_reminder(:'ekey');
 select pg_temp.check('undo puts a reminder back on the list', (select status = 'open' from public.invoice_reminders() where key = :'ekey'));
 
+-- ---------- payment plans ----------
+reset role;
+select pg_temp.check('existing weekly payers keep paying weekly', (select payment_plan = 'weekly' from public.players where id = '00000000-0000-0000-0000-0000000000b4'));
+update public.players set payment_plan = 'monthly' where id = '00000000-0000-0000-0000-0000000000b5';
+select pg_temp.check('monthly package: package billing, recurring, credits carried over',
+  (select billing_model = 'package' and monthly_recurring from public.players where id = '00000000-0000-0000-0000-0000000000b5')
+  and (select sessions_left is not null and payment_plan = 'monthly' from public.player_balances where player_id = '00000000-0000-0000-0000-0000000000b5'));
+update public.players set payment_plan = 'casual', casual_method = 'stripe' where id = '00000000-0000-0000-0000-0000000000b4';
+select pg_temp.check('casual: pays per session with a set method, not on the weekly list',
+  (select billing_model = 'pay_per_session' and casual_method = 'stripe' from public.players where id = '00000000-0000-0000-0000-0000000000b4'));
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select pg_temp.check('a casual player is left off the weekly payers list',
+  not exists (select 1 from public.payg_weeks where player_id = '00000000-0000-0000-0000-0000000000b4'));
+reset role;
+update public.players set payment_plan = 'weekly' where id = '00000000-0000-0000-0000-0000000000b4';
+select pg_temp.check('switching away from casual clears the set method', (select casual_method is null from public.players where id = '00000000-0000-0000-0000-0000000000b4'));
+update public.players set billing_model = 'package' where id = '00000000-0000-0000-0000-0000000000b4';
+select pg_temp.check('recording a package for a weekly payer moves them to a casual package', (select payment_plan = 'package' from public.players where id = '00000000-0000-0000-0000-0000000000b4'));
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;
