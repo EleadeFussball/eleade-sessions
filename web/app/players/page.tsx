@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth';
 import { usePlayers, creditClass } from '@/lib/usePlayers';
 import { fmtDate, num } from '@/lib/dates';
 import { planTag } from '@/lib/types';
+import { ageGroup } from '@/lib/age';
 import { errorText } from '@/lib/supabase';
 
 type Filter = 'all' | 'mine' | 'low' | 'monthly' | 'weekly' | 'casual';
@@ -89,7 +90,7 @@ export default function PlayersPage() {
                     {p.opening_confirmed && p.billing_model === 'package' && Number(p.sessions_left ?? 0) <= 0 && <span className="tag red">New package needed</span>}
                     <br />
                     <span className="meta">
-                      {coachName(p.main_coach_id) || 'No main coach'}
+                      {p.dob ? `${ageGroup(p.dob)}, ` : ''}{coachName(p.main_coach_id) || 'No main coach'}{p.club ? `, ${p.club}` : ''}
                       {p.last_session ? `, last session ${fmtDate(p.last_session)}` : ''}
                       {p.family ? `, ${p.family} family credits` : ''}
                     </span>

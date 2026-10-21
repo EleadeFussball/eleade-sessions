@@ -6,6 +6,13 @@ import { useAuth } from '@/lib/auth';
 import { addDays, fmtDate, money, todayISO } from '@/lib/dates';
 import { normaliseTime } from '@/lib/time';
 import { pitchLines, usePitches } from '@/lib/locations';
+import { ageGroupLabel } from '@/lib/age';
+
+// The form sends "2008-04-05" or "29 January 2007".
+function dobAge(t: string): string {
+  const iso = /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : (() => { const d = new Date(t); return isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+  return iso ? ageGroupLabel(iso) : '';
+}
 
 type Status = 'new' | 'assigned' | 'contacted' | 'booked' | 'done' | 'declined';
 type Outcome = 'package5' | 'package10' | 'handover' | 'not_continuing';
@@ -256,7 +263,7 @@ function EnquiryCard({ e, link, payment, notes, onChanged, defaultOpen }: {
             {e.parent_name && <><dt>Parent</dt><dd>{e.parent_name}</dd></>}
             {phone && <><dt>Parent phone</dt><dd><a href={`tel:${phone.replace(/\s/g, '')}`}>{phone}</a></dd></>}
             {mail && <><dt>Parent email</dt><dd><a href={`mailto:${mail}`}>{mail}</a></dd></>}
-            {e.dob && <><dt>Date of birth</dt><dd>{e.dob}</dd></>}
+            {e.dob && <><dt>Date of birth</dt><dd>{e.dob}{dobAge(e.dob) ? ` (${dobAge(e.dob)})` : ''}</dd></>}
             {e.age_group && <><dt>Age group</dt><dd>{e.age_group}</dd></>}
             {e.position && <><dt>Position</dt><dd>{e.position}</dd></>}
             {e.foot && <><dt>Foot</dt><dd>{e.foot}</dd></>}

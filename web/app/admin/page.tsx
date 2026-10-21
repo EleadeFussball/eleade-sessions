@@ -14,6 +14,7 @@ import { InvoiceReminders } from '@/components/InvoiceReminders';
 import { PastInvoices } from '@/components/PastInvoices';
 import { DriveAdmin } from '@/components/DriveAdmin';
 import { CoachFollowUp } from '@/components/CoachFollowUp';
+import { FeedbackAdmin } from '@/components/FeedbackAdmin';
 
 type Expiring = { player_id: string; name: string; family: string | null; package_name: string | null; expires_on: string; days_left: number; sessions_left: number | null; analyses_left: number | null };
 type Missing = { player_id: string; name: string; main_coach_id: string | null; last_logged: string | null };
@@ -152,6 +153,8 @@ export default function AdminPage() {
       )}
 
       <CoachFollowUp />
+
+      <FeedbackAdmin />
 
       <PastInvoices />
 

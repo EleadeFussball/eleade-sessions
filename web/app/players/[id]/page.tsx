@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { ClipUpload } from '@/components/ClipUpload';
+import { PlayerDetails } from '@/components/PlayerDetails';
+import { FeedbackHistory } from '@/components/FeedbackHistory';
 import { creditClass } from '@/lib/usePlayers';
 import { SessionItem } from '@/components/SessionItem';
 import { RegularSessions } from '@/components/RegularSessions';
@@ -18,6 +20,7 @@ type Player = {
   session_price: number | null; main_coach_id: string | null; active: boolean; opening_confirmed: boolean; profile_notes: string | null; drive_folder_id?: string | null;
   created_by: string | null; monthly_recurring?: boolean; pair_price?: number | null;
   payment_plan?: PaymentPlan; casual_method?: 'stripe' | 'cash' | 'bank' | null;
+  parent_name?: string | null; dob?: string | null; email?: string | null; phone?: string | null; club?: string | null;
 };
 type Ledger = { id: string; kind: string; sessions_delta: number; analyses_delta: number; pairs_delta: number; package_name: string | null;
   amount_paid: number | null; reason: string; effective_date: string; expires_on: string | null; player_id: string;
@@ -128,6 +131,7 @@ export default function PlayerPage() {
         {p.family ? `. Shares credits with the ${p.family} family.` : ''}
         {!p.active ? ' Not currently training.' : ''}
       </p>
+      <PlayerDetails key={`${p.id}${p.dob}${p.club}${p.parent_name}${p.email}`} p={p} onSaved={load} />
 
       {p.billing_model === 'package' ? (
         <>
@@ -236,6 +240,7 @@ export default function PlayerPage() {
       )}
 
       <ClipUpload playerId={p.id} playerName={p.name} folderId={p.drive_folder_id ?? null} />
+      <FeedbackHistory playerId={p.id} />
 
       {(p.billing_model === 'package' || isAdmin) && <RecordPackage playerId={p.id} name={p.name} billing={p.billing_model} onSaved={load} />}
       {isAdmin && <AdminPanel p={p} onSaved={load} />}

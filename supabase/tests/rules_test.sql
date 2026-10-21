@@ -1326,6 +1326,43 @@ select pg_temp.check('switching away from casual clears the set method', (select
 update public.players set billing_model = 'package' where id = '00000000-0000-0000-0000-0000000000b4';
 select pg_temp.check('recording a package for a weekly payer moves them to a casual package', (select payment_plan = 'package' from public.players where id = '00000000-0000-0000-0000-0000000000b4'));
 
+-- ---------- player details and two-monthly feedback ----------
+reset role;
+select pg_temp.check('dates of birth from the form are read in every format',
+  public.parse_dob('29 January 2007') = date '2007-01-29' and public.parse_dob('2008-04-05') = date '2008-04-05'
+  and public.parse_dob('05/02/2013') = date '2013-02-05' and public.parse_dob('soon') is null);
+select public.record_enquiry('wix-details', '{"first_name":"Dora","last_name":"Details","parent_name":"Dad Details","email":"dad@test","phone":"0400 111 222","dob":"5 February 2013","club":"UNSW"}'::jsonb, '{}'::jsonb) as denq \gset
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.assign_enquiry(:'denq', '00000000-0000-0000-0000-0000000000c2') as dplayer \gset
+select pg_temp.check('a player from the website form gets the parent, date of birth, email, phone and club',
+  (select parent_name = 'Dad Details' and dob = date '2013-02-05' and email = 'dad@test' and phone = '0400 111 222' and club = 'UNSW'
+     from public.players where id = :'dplayer'));
+reset role;
+update public.settings set value = to_jsonb(to_char(date_trunc('month', public.today_sydney()) - interval '3 months', 'YYYY-MM-DD')) where key = 'feedback_from';
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select pg_temp.check('feedback periods are two months long and due from the 25th of the second month',
+  (select bool_and(period_end = (period_start + interval '2 months' - interval '1 day')::date and due_on = (period_start + interval '1 month' + interval '24 days')::date
+                   and due_on <= public.today_sydney()) from public.feedback_periods()));
+reset role;
+insert into public.players (id, name, main_coach_id) values ('00000000-0000-0000-0000-0000000fee01', 'Fiona Feedback', '00000000-0000-0000-0000-0000000000c2');
+insert into public.sessions (id, session_date, coach_id, format, outcome, logged_at, topic) values
+  ('00000000-0000-0000-0000-0000000fee11', (select min(period_start) + 5 from public.feedback_periods()), '00000000-0000-0000-0000-0000000000c3', '1:1', 'attended', now(), 'x');
+insert into public.session_players (session_id, player_id) values ('00000000-0000-0000-0000-0000000fee11', '00000000-0000-0000-0000-0000000fee01');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select pg_temp.check('the main coach is asked for feedback on a player trained in the period (even by another coach)',
+  exists (select 1 from public.feedback_due('00000000-0000-0000-0000-0000000000c2') where player_id = '00000000-0000-0000-0000-0000000fee01'));
+select period_start as fbp from public.feedback_due('00000000-0000-0000-0000-0000000000c2') where player_id = '00000000-0000-0000-0000-0000000fee01' \gset
+select public.save_feedback('00000000-0000-0000-0000-0000000fee01', :'fbp', '• Better first touch', '• Scanning', null) as fbid \gset
+select pg_temp.check('once written, it is off the coach''s list',
+  not exists (select 1 from public.feedback_due('00000000-0000-0000-0000-0000000000c2') where player_id = '00000000-0000-0000-0000-0000000fee01'));
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select pg_temp.check('Jan sees it ready to send', (select status = 'ready' and progress like '%first touch%' from public.feedback_overview() where player_id = '00000000-0000-0000-0000-0000000fee01'));
+select public.feedback_sent(:'fbid');
+select pg_temp.check('and marks it sent', (select status = 'sent' from public.feedback_overview() where player_id = '00000000-0000-0000-0000-0000000fee01'));
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;

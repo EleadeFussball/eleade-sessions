@@ -372,3 +372,9 @@ details.panel[open] > summary { border-bottom: 1px solid var(--line); margin-bot
 /* To-do lists on Your week and Invoices */
 .todo { border-left: 4px solid var(--brand-red); }
 .todo-row { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 10px; background: none; border: 0; padding: 4px 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+
+/* Player details and feedback messages */
+.details { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 8px; }
+.details dt { color: var(--muted); }
+.details dd { margin: 0; }
+pre.msg { white-space: pre-wrap; font: inherit; background: var(--turf-soft); padding: 10px 12px; border-radius: 8px; }

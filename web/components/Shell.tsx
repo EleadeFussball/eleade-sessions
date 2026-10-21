@@ -97,14 +97,17 @@ export function Shell({ children }: { children: ReactNode }) {
     const count = () => Promise.all([
       supabase.rpc('undocumented_sessions', { p_coach_id: coach.id }),
       supabase.rpc('videos_due', { p_coach_id: coach.id }),
-    ]).then(([d, v]) => {
+      supabase.rpc('feedback_due', { p_coach_id: coach.id }),
+    ]).then(([d, v, f]) => {
       const today = todayISO();
-      if (alive) setTodo(((d.data as unknown[]) ?? []).length + ((v.data as { due_on: string }[]) ?? []).filter((x) => x.due_on <= today).length);
+      if (alive) setTodo(((d.data as unknown[]) ?? []).length + ((v.data as { due_on: string }[]) ?? []).filter((x) => x.due_on <= today).length
+        + ((f.data as unknown[]) ?? []).length);
     });
     count();
     window.addEventListener('eleade:docs-changed', count);
     window.addEventListener('eleade:clip-saved', count);
-    return () => { alive = false; window.removeEventListener('eleade:docs-changed', count); window.removeEventListener('eleade:clip-saved', count); };
+    window.addEventListener('eleade:feedback-changed', count);
+    return () => { alive = false; window.removeEventListener('eleade:docs-changed', count); window.removeEventListener('eleade:clip-saved', count); window.removeEventListener('eleade:feedback-changed', count); };
   }, [coach, path]);
 
   useEffect(() => {

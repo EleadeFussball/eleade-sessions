@@ -32,6 +32,8 @@ export type PlayerBalance = {
   next_expiry: string | null;
   payment_plan?: PaymentPlan;
   casual_method?: 'stripe' | 'cash' | 'bank' | null;
+  dob?: string | null;
+  club?: string | null;
 };
 
 export type PaymentPlan = 'monthly' | 'package' | 'weekly' | 'casual';
