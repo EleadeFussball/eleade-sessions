@@ -117,7 +117,7 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
       {shownCoaches.length > 1 && (
         <div className="cal-legend">
           {shownCoaches.map((c) => <span key={c.id}><i style={{ background: coachColour(c.name) }} />{c.name}</span>)}
-          <span className="cal-legend-done">✓ = logged</span>
+          <span className="cal-legend-done">✓ logged · ✕ cancelled · &quot;Log it&quot; = over, still to log</span>
         </div>
       )}
       <div className="grid-head" style={{ gridTemplateColumns: `44px repeat(${days.length}, 1fr)` }}>
@@ -168,7 +168,8 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
                 const startM = dragging ? drag.mins : minutesOf(o.start_time)!;
                 const mine = isAdmin || o.coach_id === coach?.id;
                 const done = !!o.session_id;
-                const completable = !done && !dragging && canComplete(o, isAdmin) && (isAdmin || o.coach_id === coach?.id);
+                // the Log button only appears once the session is over (for Jan too), so it never looks done before it happens
+                const completable = !done && !dragging && canComplete(o, false) && (isAdmin || o.coach_id === coach?.id);
                 return (
                   <button
                     key={key} type="button" data-ev={key}
@@ -244,7 +245,7 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
                             onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => { e.stopPropagation(); onComplete(o); }}
                             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onComplete(o); } }}>
-                        Completed
+                        Log it
                       </span>
                     ) : (
                       <span className="ev-sub">
@@ -259,7 +260,7 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
           );
         })}
       </div>
-      <p className="hint mt">Tap an empty slot to add a session, or a session to open it. Tap Completed on a session once it is over. Hold a session for a moment, then drag it to another time or day. With a mouse, drag it straight away.</p>
+      <p className="hint mt">Tap an empty slot to add a session, or a session to open it. Once a session is over it shows Log it: tap it to log the session. Hold a session for a moment, then drag it to another time or day. With a mouse, drag it straight away.</p>
     </div>
   );
 }
