@@ -6,12 +6,12 @@ import { todayISO } from './dates';
 
 export type Upload = {
   id: string; playerId: string; playerName: string; fileName: string;
-  pct: number; status: 'starting' | 'uploading' | 'done' | 'error'; error?: string;
+  pct: number; status: 'starting' | 'uploading' | 'done' | 'error'; error?: string; social?: boolean; socialNote?: string;
 };
 
 type Ctx = {
   uploads: Upload[];
-  start: (file: File, playerId: string, playerName: string, coachName?: string) => void;
+  start: (file: File, playerId: string, playerName: string, coachName?: string, social?: boolean) => void;
   dismiss: (id: string) => void;
 };
 const UploadCtx = createContext<Ctx>({ uploads: [], start: () => {}, dismiss: () => {} });
@@ -31,12 +31,12 @@ export function UploadProvider({ children }: { children: ReactNode }) {
   const patch = (id: string, p: Partial<Upload>) => setUploads((u) => u.map((x) => (x.id === id ? { ...x, ...p } : x)));
   const active = uploads.some((u) => u.status === 'starting' || u.status === 'uploading');
 
-  const start = useCallback((file: File, playerId: string, playerName: string, coachName?: string) => {
+  const start = useCallback((file: File, playerId: string, playerName: string, coachName?: string, social = false) => {
     const id = Math.random().toString(36).slice(2);
     const ext = (file.name.match(/\.[a-z0-9]{2,5}$/i)?.[0] ?? '.mp4').toLowerCase();
     const first = (coachName ?? '').split(' ')[0];
     const fileName = `${todayISO()} ${playerName}${first ? ` (${first})` : ''}${ext}`;
-    setUploads((u) => [...u, { id, playerId, playerName, fileName, pct: 0, status: 'starting' }]);
+    setUploads((u) => [...u, { id, playerId, playerName, fileName, pct: 0, status: 'starting', social }]);
     (async () => {
       try {
         const mime = file.type || 'video/mp4';
@@ -54,8 +54,13 @@ export function UploadProvider({ children }: { children: ReactNode }) {
           x.onerror = () => reject(new Error('Upload stopped. Keep eleade Hub open until it finishes, then try again.'));
           x.send(file);
         });
-        await supabase.rpc('record_clip', { p_player_id: playerId, p_file_id: fileId, p_file_name: fileName });
-        patch(id, { status: 'done', pct: 100 });
+        const { data: clipId } = await supabase.rpc('record_clip', { p_player_id: playerId, p_file_id: fileId, p_file_name: fileName });
+        let socialNote = '';
+        if (social && clipId) {
+          try { await driveApi('/api/drive/social', { clip_id: clipId }); socialNote = ' and copied to Social Media Footage'; }
+          catch (e) { socialNote = `. Copy to Social Media Footage failed: ${errorText(e)}`; }
+        }
+        patch(id, { status: 'done', pct: 100, socialNote });
         window.dispatchEvent(new CustomEvent(CLIP_SAVED, { detail: playerId }));
         setTimeout(() => setUploads((u) => u.filter((x) => x.id !== id)), 6000);
       } catch (e) {
@@ -92,7 +97,7 @@ export function UploadBar() {
         <div key={u.id} className={`upload ${u.status}`}>
           <div className="upload-line">
             <span>
-              {u.status === 'done' ? `Clip saved to ${u.playerName}'s folder` : u.status === 'error' ? `${u.playerName} clip not uploaded` : `Uploading ${u.playerName} clip ${u.pct}%`}
+              {u.status === 'done' ? `Clip saved to ${u.playerName}'s folder${u.socialNote ?? ''}` : u.status === 'error' ? `${u.playerName} clip not uploaded` : `Uploading ${u.playerName} clip ${u.pct}%`}
             </span>
             {(u.status === 'done' || u.status === 'error') && <button type="button" className="linkbtn" onClick={() => dismiss(u.id)} aria-label="Close">×</button>}
           </div>

@@ -7,6 +7,16 @@ alter table public.players add column if not exists dob date;
 alter table public.players add column if not exists email text;
 alter table public.players add column if not exists phone text;
 alter table public.players add column if not exists club text;
+alter table public.players add column if not exists position text;
+alter table public.players add column if not exists foot text;
+alter table public.players add column if not exists heard_from text;
+alter table public.players add column if not exists form_age_group text;   -- the age group as given on the form
+alter table public.players add column if not exists enquiry_id uuid;       -- the website form the player came from
+
+-- Training videos marked as good for social media are also copied to one shared folder.
+alter table public.drive_clips add column if not exists social boolean not null default false;
+alter table public.drive_clips add column if not exists social_file_id text;
+alter table public.drive_connection add column if not exists social_folder_id text;
 
 -- Coaches see the age group and club in the player list
 create or replace view public.player_balances with (security_invoker = true) as
@@ -74,7 +84,12 @@ language sql security definer set search_path = public as $$
          dob = coalesce(p.dob, public.parse_dob(e.dob)),
          email = coalesce(p.email, nullif(trim(coalesce(e.parent_email, e.email)), '')),
          phone = coalesce(p.phone, nullif(trim(coalesce(e.parent_phone, e.phone)), '')),
-         club = coalesce(p.club, nullif(trim(e.club), ''))
+         club = coalesce(p.club, nullif(trim(e.club), '')),
+         position = coalesce(p.position, nullif(trim(e.position), '')),
+         foot = coalesce(p.foot, nullif(trim(e.foot), '')),
+         heard_from = coalesce(p.heard_from, nullif(trim(e.heard_from), '')),
+         form_age_group = coalesce(p.form_age_group, nullif(trim(e.age_group), '')),
+         enquiry_id = coalesce(p.enquiry_id, e.id)
     from public.enquiries e
    where e.id = p_enquiry_id and p.id = e.player_id
 $$;
@@ -230,3 +245,23 @@ revoke execute on function public.copy_enquiry_details(uuid), public.save_player
 grant execute on function public.save_player_details(uuid, text, date, text, text, text), public.feedback_periods(),
   public.feedback_due(uuid), public.feedback_overview(), public.save_feedback(uuid, date, text, text, text),
   public.feedback_sent(uuid, boolean), public.parse_dob(text) to authenticated;
+
+-- After a clip is copied to the social media folder.
+create or replace function public.mark_clip_social(p_clip_id uuid, p_file_id text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_coach() then raise exception 'Sign in as a coach'; end if;
+  update public.drive_clips set social = true, social_file_id = nullif(p_file_id, '') where id = p_clip_id;
+end $$;
+create or replace function public.set_social_folder(p_folder_id text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_coach() then raise exception 'Sign in as a coach'; end if;
+  update public.drive_connection set social_folder_id = p_folder_id where id = 1 and social_folder_id is null;
+end $$;
+create or replace function public.social_folder() returns text
+language sql stable security definer set search_path = public as $$
+  select social_folder_id from public.drive_connection where id = 1 and public.is_coach()
+$$;
+revoke execute on function public.mark_clip_social(uuid, text), public.set_social_folder(text), public.social_folder() from public, anon;
+grant execute on function public.mark_clip_social(uuid, text), public.set_social_folder(text), public.social_folder() to authenticated;

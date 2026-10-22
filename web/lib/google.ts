@@ -159,6 +159,27 @@ export async function startUpload(token: string, parent: string, name: string, m
   return loc;
 }
 
+export async function parentOf(token: string, id: string): Promise<string | null> {
+  const j = await g<{ parents?: string[] }>(token, `${API}/files/${encodeURIComponent(id)}?fields=parents&supportsAllDrives=true`);
+  return j.parents?.[0] ?? null;
+}
+
+export async function findFile(token: string, parent: string, name: string): Promise<string | null> {
+  const q = new URLSearchParams({
+    q: `'${esc(parent)}' in parents and name = '${esc(name)}' and trashed = false`,
+    fields: 'files(id)', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true', orderBy: 'createdTime desc',
+  });
+  const j = await g<{ files: { id: string }[] }>(token, `${API}/files?${q}`);
+  return j.files[0]?.id ?? null;
+}
+
+export async function copyFile(token: string, id: string, parent: string, name: string): Promise<string> {
+  const j = await g<{ id: string }>(token, `${API}/files/${encodeURIComponent(id)}/copy?supportsAllDrives=true&fields=id`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, parents: [parent] }),
+  });
+  return j.id;
+}
+
 export function fail(e: unknown) {
   const status = e instanceof HttpError ? e.status : 500;
   return Response.json({ error: e instanceof Error ? e.message : 'Something went wrong.' }, { status });

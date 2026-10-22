@@ -1336,7 +1336,7 @@ set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
 select public.assign_enquiry(:'denq', '00000000-0000-0000-0000-0000000000c2') as dplayer \gset
 select pg_temp.check('a player from the website form gets the parent, date of birth, email, phone and club',
-  (select parent_name = 'Dad Details' and dob = date '2013-02-05' and email = 'dad@test' and phone = '0400 111 222' and club = 'UNSW'
+  (select parent_name = 'Dad Details' and dob = date '2013-02-05' and email = 'dad@test' and phone = '0400 111 222' and club = 'UNSW' and enquiry_id = :'denq'
      from public.players where id = :'dplayer'));
 reset role;
 update public.settings set value = to_jsonb(to_char(date_trunc('month', public.today_sydney()) - interval '3 months', 'YYYY-MM-DD')) where key = 'feedback_from';

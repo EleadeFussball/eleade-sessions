@@ -378,3 +378,6 @@ details.panel[open] > summary { border-bottom: 1px solid var(--line); margin-bot
 .details dt { color: var(--muted); }
 .details dd { margin: 0; }
 pre.msg { white-space: pre-wrap; font: inherit; background: var(--turf-soft); padding: 10px 12px; border-radius: 8px; }
+.clipbtn { display: inline-flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.check.small { font-size: .82rem; display: flex; gap: 6px; align-items: center; }
+.check.small input { width: 18px; height: 18px; }

@@ -21,6 +21,7 @@ type Player = {
   created_by: string | null; monthly_recurring?: boolean; pair_price?: number | null;
   payment_plan?: PaymentPlan; casual_method?: 'stripe' | 'cash' | 'bank' | null;
   parent_name?: string | null; dob?: string | null; email?: string | null; phone?: string | null; club?: string | null;
+  position?: string | null; foot?: string | null; heard_from?: string | null; form_age_group?: string | null; enquiry_id?: string | null;
 };
 type Ledger = { id: string; kind: string; sessions_delta: number; analyses_delta: number; pairs_delta: number; package_name: string | null;
   amount_paid: number | null; reason: string; effective_date: string; expires_on: string | null; player_id: string;
