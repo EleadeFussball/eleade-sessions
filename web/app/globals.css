@@ -384,3 +384,4 @@ pre.msg { white-space: pre-wrap; font: inherit; background: var(--turf-soft); pa
 .cliplist { list-style: none; padding: 0; margin: 8px 0 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
 .cliplist li { display: flex; flex-direction: column; gap: 6px; }
 .cliplist video { width: 100%; aspect-ratio: 9 / 16; max-height: 220px; object-fit: cover; border-radius: 8px; background: #000; }
+.bday { border-left: 4px solid #F2B705; background: color-mix(in srgb, #F2B705 10%, var(--paper)); }

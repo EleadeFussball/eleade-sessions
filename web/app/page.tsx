@@ -2,6 +2,7 @@
 import { DocsTodo } from '@/components/DocsTodo';
 import { VideosDue } from '@/components/VideosDue';
 import { FeedbackDue } from '@/components/FeedbackDue';
+import { Birthdays } from '@/components/Birthdays';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
@@ -63,6 +64,7 @@ export default function YourWeek() {
   return (
     <>
       <h1>Your week</h1>
+      <Birthdays />
       {coach && <DocsTodo coachId={coach.id} />}
       {coach && <VideosDue coachId={coach.id} />}
       {coach && <FeedbackDue coachId={coach.id} />}
