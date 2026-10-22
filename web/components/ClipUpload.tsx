@@ -9,26 +9,56 @@ import { CLIP_SAVED, useUploads } from '@/lib/uploads';
 
 type Clip = { id: string; file_name: string; created_at: string; coach_id: string | null; social?: boolean };
 
-/** The "Upload clip" button for one player. The upload itself runs app-wide (see UploadProvider). */
+/** The "Upload clip" button for one player: pick one or several videos, tick the ones for social media, upload. */
 export function ClipButton({ playerId, playerName, folderId, label }: { playerId: string; playerName: string; folderId: string | null; label?: string }) {
   const { coach, isAdmin } = useAuth();
   const { uploads, start } = useUploads();
   const input = useRef<HTMLInputElement>(null);
-  const [social, setSocial] = useState(false);
-  const busy = uploads.find((u) => u.playerId === playerId && (u.status === 'starting' || u.status === 'uploading'));
+  const [picked, setPicked] = useState<{ file: File; url: string; social: boolean }[]>([]);
+  const urls = useRef<string[]>([]);
+  useEffect(() => () => urls.current.forEach((u) => URL.revokeObjectURL(u)), []);
+  const mine = uploads.filter((u) => u.playerId === playerId && (u.status === 'starting' || u.status === 'uploading'));
   if (!folderId) {
     return <p className="hint">{playerName}: no Drive folder linked yet. {isAdmin ? 'Link it under Google Drive on the Admin page.' : 'Jan links it on the Admin page.'}</p>;
   }
+  function uploadAll() {
+    const n = picked.length;
+    picked.forEach((p, i) => start(p.file, playerId, playerName, coach?.name, p.social, n > 1 ? `${i + 1} of ${n}` : ''));
+    setPicked([]);
+  }
   return (
     <>
-      <input ref={input} type="file" accept="video/*" hidden
-             onChange={(e) => { const f = e.target.files?.[0]; if (f) { start(f, playerId, playerName, coach?.name, social); setSocial(false); } e.target.value = ''; }} />
-      <span className="clipbtn">
+      <input ref={input} type="file" accept="video/*" multiple hidden
+             onChange={(e) => {
+               const files = Array.from(e.target.files ?? []);
+               if (files.length) setPicked(files.map((f) => { const url = URL.createObjectURL(f); urls.current.push(url); return { file: f, url, social: false }; }));
+               e.target.value = '';
+             }} />
+      {picked.length === 0 ? (
         <button type="button" className="btn small" onClick={() => input.current?.click()}>
-          {busy ? `Uploading ${busy.pct}%` : label ?? 'Upload clip'}
+          {mine.length ? `Uploading ${mine.length} clip${mine.length === 1 ? '' : 's'}` : label ?? 'Upload clips'}
         </button>
-        <label className="check small"><input type="checkbox" checked={social} onChange={(e) => setSocial(e.target.checked)} /> <span>Good for social media</span></label>
-      </span>
+      ) : (
+        <div className="panel clippick" style={{ width: '100%' }}>
+          <p style={{ marginTop: 0 }}><strong>{picked.length} clip{picked.length === 1 ? '' : 's'} for {playerName}</strong><br />
+            <span className="hint">Tick the ones that are good for social media. They are also copied to the Social Media Footage folder.</span></p>
+          <ul className="cliplist">{picked.map((p, i) => (
+            <li key={p.url}>
+              <video src={p.url} muted playsInline preload="metadata" />
+              <label className="check small">
+                <input type="checkbox" checked={p.social} onChange={(e) => setPicked(picked.map((x, k) => (k === i ? { ...x, social: e.target.checked } : x)))} />
+                <span>Social media</span>
+              </label>
+              <button type="button" className="linkbtn" onClick={() => setPicked(picked.filter((_, k) => k !== i))}>Remove</button>
+            </li>
+          ))}</ul>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className="btn small" onClick={uploadAll}>Upload {picked.length} clip{picked.length === 1 ? '' : 's'}</button>
+            <button type="button" className="btn small ghost" onClick={() => input.current?.click()}>Choose again</button>
+            <button type="button" className="btn small ghost" onClick={() => setPicked([])}>Cancel</button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -56,7 +86,7 @@ export function ClipUpload({ playerId, playerName, folderId }: { playerId: strin
   return (
     <section className="panel mt">
       <h2 style={{ marginTop: 0 }}>Session clips</h2>
-      {folderId && <p className="hint">30 to 60 seconds is ideal. Pick a video from your phone or record one now.</p>}
+      {folderId && <p className="hint">30 to 60 seconds each is ideal. Pick one or several videos from your phone, or record one now.</p>}
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <ClipButton playerId={playerId} playerName={playerName} folderId={folderId} />
         {isAdmin && folderId && <a className="btn small ghost" href={folderUrl(folderId)} target="_blank" rel="noreferrer">Open Drive folder</a>}

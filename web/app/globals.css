@@ -381,3 +381,6 @@ pre.msg { white-space: pre-wrap; font: inherit; background: var(--turf-soft); pa
 .clipbtn { display: inline-flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .check.small { font-size: .82rem; display: flex; gap: 6px; align-items: center; }
 .check.small input { width: 18px; height: 18px; }
+.cliplist { list-style: none; padding: 0; margin: 8px 0 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.cliplist li { display: flex; flex-direction: column; gap: 6px; }
+.cliplist video { width: 100%; aspect-ratio: 9 / 16; max-height: 220px; object-fit: cover; border-radius: 8px; background: #000; }
