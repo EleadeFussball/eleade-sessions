@@ -1,12 +1,12 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { addDays, fmtDate, todayISO } from '@/lib/dates';
 import { normaliseTime } from '@/lib/time';
 import { FORMAT_LABEL, OUTCOME_LABEL, placeLabel, type Outcome } from '@/lib/types';
-import { cancelEntry, canComplete, completeFrom, hhmm, moveEntry, savePrep, timeRange, type ScheduleEntry } from '@/lib/schedule';
+import { cancelEntry, canComplete, carriedFocus, completeFrom, hhmm, moveEntry, savePrep, timeRange, type ScheduleEntry } from '@/lib/schedule';
 import { LogFlow } from '@/components/LogFlow';
 import { EditSession, canEditSession } from '@/components/EditSession';
 
@@ -23,6 +23,16 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
   const [minutes, setMinutes] = useState(o.minutes);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [carried, setCarried] = useState<string | null>(null);
+
+  // Planning a session with no plan yet: offer last time's "Next session" text, which the coach can edit.
+  useEffect(() => {
+    if (mode !== 'plan' || o.prep || plan.trim()) return;
+    let live = true;
+    carriedFocus(o).then((c) => { if (live && c) { setPlan((p) => (p.trim() ? p : c.text)); setCarried(c.date); } });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   const future = o.session_date > todayISO();
   const mine = isAdmin || o.coach_id === coach?.id;
@@ -106,6 +116,7 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
           <label className="field"><span>What you will work on</span>
             <textarea value={plan} onChange={(e) => setPlan(e.target.value)} autoFocus
                       placeholder="e.g. Receiving on the half turn, weak foot finishing, 1v1 to goal" /></label>
+          {carried && !o.prep && <p className="hint">Filled in from &quot;Next session&quot; on {fmtDate(carried)}. Change it if you like.</p>}
           <p className="hint">Optional. Your plan is used as &quot;What you worked on&quot; when you complete the session, so afterwards you only add how it went and the next session. You can still change it then.</p>
           <div className="row">
             <button type="button" className="btn small" disabled={busy} onClick={savePlan}>{busy ? 'Saving' : 'Save plan'}</button>

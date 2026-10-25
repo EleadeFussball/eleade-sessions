@@ -4,7 +4,7 @@ import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { usePlayers } from '@/lib/usePlayers';
 import { todayISO } from '@/lib/dates';
-import { canComplete, completeFrom, confirmEntry, type ScheduleEntry } from '@/lib/schedule';
+import { canComplete, carriedFocus, completeFrom, confirmEntry, type ScheduleEntry } from '@/lib/schedule';
 import { FORMAT_LABEL, MAX_PLAYERS, OUTCOME_LABEL, placeField, FOCUS_LABEL, FOCUS_PLACEHOLDER, type Format, type Outcome } from '@/lib/types';
 import { PlayerPicker } from '@/components/PlayerPicker';
 import { StripeNote, useUnusedPayments } from '@/components/StripeNote';
@@ -38,6 +38,15 @@ export function LogFlow({ o, onDone, onCancel }: { o: ScheduleEntry; onDone: () 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const unused = useUnusedPayments(ids);
+
+  // No plan saved: start "What you worked on" from last time's "Next session" (the coach can edit it).
+  useEffect(() => {
+    if (o.prep || future) return;
+    let live = true;
+    carriedFocus(o).then((c) => { if (live && c) setTopic((t) => (t.trim() ? t : c.text)); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (ids.length === 0) { setFolders([]); return; }

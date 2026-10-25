@@ -121,6 +121,21 @@ export function canComplete(o: ScheduleEntry, isAdmin: boolean): boolean {
   return now.mins >= (minutesOf(o.start_time) ?? 0) + o.minutes + 5;
 }
 
+/**
+ * What the coach wrote under "Next session" the last time they logged this player (1:1 sessions only),
+ * so it can be offered as the plan for the next session. Null when there is none.
+ */
+export async function carriedFocus(o: Pick<ScheduleEntry, 'player_ids' | 'session_date'>): Promise<{ text: string; date: string } | null> {
+  if (!o.player_ids || o.player_ids.length !== 1) return null;
+  const { data } = await supabase.from('sessions')
+    .select('improve, session_date, session_players!inner(player_id)')
+    .eq('session_players.player_id', o.player_ids[0]).eq('outcome', 'attended')
+    .lt('session_date', o.session_date).not('improve', 'is', null).neq('improve', '')
+    .order('session_date', { ascending: false }).order('start_time', { ascending: false }).limit(1);
+  const r = (data as { improve: string; session_date: string }[] | null)?.[0];
+  return r?.improve?.trim() ? { text: r.improve.trim(), date: r.session_date } : null;
+}
+
 /** Where this player was last coached, or an empty string. */
 export async function lastLocation(playerId: string): Promise<string> {
   const { data } = await supabase.rpc('last_location', { p_player_id: playerId });
