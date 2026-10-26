@@ -1,50 +1,76 @@
--- Change a regular (weekly) session going forward: a new day, time, length or place from a chosen date.
--- Sessions before that date stay exactly as they are. Behind the scenes the old plan ends the day before
--- and an identical new one starts (same coach, type and players), so history, invoices and credits are untouched.
+-- Two-monthly feedback is only needed for regular players.
+-- feedback_mode per player: 'auto' (regular = a current regular session, or at least 4 sessions in the period),
+-- 'always' (always asked for) or 'never' (never asked for). Jan sets it on the player page.
 
-create or replace function public.change_plan(
-  p_plan_id uuid, p_from date, p_weekday int, p_start_time time, p_minutes int default null, p_location text default null
-) returns uuid
-language plpgsql set search_path = public as $$
-declare
-  v public.session_plans%rowtype;
-  v_new uuid;
-  v_loc text := nullif(trim(p_location), '');
-  v_used boolean;
-begin
-  select * into v from public.session_plans where id = p_plan_id;
-  if not found or not public.can_manage_plan(p_plan_id) then
-    raise exception 'Regular session not found, or it is not yours to change';
-  end if;
-  if p_weekday is null or p_weekday not between 1 and 7 then raise exception 'Pick a day'; end if;
-  if p_start_time is null then raise exception 'Add a start time'; end if;
-  if p_from is null or p_from < public.today_sydney() then
-    raise exception 'Choose today or a later date for the change to start';
-  end if;
-  if v.ends_on is not null and v.ends_on < p_from then
-    raise exception 'That regular session has already ended';
-  end if;
-  if exists (select 1 from public.sessions where plan_id = p_plan_id and plan_date >= p_from) then
-    raise exception 'Sessions from that date are already logged. Choose a later date.';
-  end if;
+alter table public.players add column if not exists feedback_mode text not null default 'auto';
+alter table public.players drop constraint if exists players_feedback_mode_check;
+alter table public.players add constraint players_feedback_mode_check check (feedback_mode in ('auto', 'always', 'never'));
 
-  -- nothing has happened on this plan yet: just edit it
-  v_used := exists (select 1 from public.sessions where plan_id = p_plan_id)
-         or exists (select 1 from public.invoice_lines where planned_ref = p_plan_id)
-         or exists (select 1 from public.plan_changes where plan_id = p_plan_id);
-  if p_from <= v.starts_on and not v_used then
-    update public.session_plans
-       set weekday = p_weekday, start_time = p_start_time, minutes = coalesce(p_minutes, minutes), location = v_loc
-     where id = p_plan_id;
-    return p_plan_id;
-  end if;
+create or replace function public.feedback_applies(p_player_id uuid, p_start date, p_end date)
+returns boolean
+language sql stable security definer set search_path = public as $$
+  select case p.feedback_mode
+           when 'never' then false
+           when 'always' then true
+           else p.active and (
+             exists (select 1 from public.plan_players pp join public.session_plans pl on pl.id = pp.plan_id
+                      where pp.player_id = p.id and pl.starts_on <= p_end and (pl.ends_on is null or pl.ends_on >= p_start))
+             or (select count(*) from public.sessions s join public.session_players sp on sp.session_id = s.id
+                  where sp.player_id = p.id and s.session_date between p_start and p_end
+                    and public.outcome_counts(s.outcome) and s.format in ('1:1', '2:1', '4:1')) >= 4)
+         end
+    from public.players p where p.id = p_player_id
+$$;
+revoke execute on function public.feedback_applies(uuid, date, date) from public, anon;
+grant execute on function public.feedback_applies(uuid, date, date) to authenticated;
 
-  update public.session_plans set ends_on = greatest(p_from - 1, starts_on - 1) where id = p_plan_id;
-  insert into public.session_plans (coach_id, format, weekday, start_time, location, starts_on, ends_on, minutes, created_by)
-  values (v.coach_id, v.format, p_weekday, p_start_time, v_loc, p_from, v.ends_on, coalesce(p_minutes, v.minutes), auth.uid())
-  returning id into v_new;
-  insert into public.plan_players (plan_id, player_id) select v_new, player_id from public.plan_players where plan_id = p_plan_id;
-  return v_new;
-end $$;
+create or replace function public.feedback_due(p_coach_id uuid)
+returns table (player_id uuid, name text, period_start date, period_end date, sessions bigint)
+language sql stable security definer set search_path = public as $$
+  with trained as (
+    select f.period_start, f.period_end, sp.player_id, count(*) as n,
+           (array_agg(s.coach_id order by s.session_date desc))[1] as last_coach
+      from public.feedback_periods() f
+      join public.sessions s on s.session_date between f.period_start and f.period_end
+      join public.session_players sp on sp.session_id = s.id
+     where s.outcome = 'attended' and not s.imported and s.format in ('1:1', '2:1', '4:1')
+     group by 1, 2, 3
+  )
+  select t.player_id, p.name, t.period_start, t.period_end, t.n
+    from trained t join public.players p on p.id = t.player_id
+   where coalesce(p.main_coach_id, t.last_coach) = p_coach_id
+     and (public.is_admin() or p_coach_id = public.current_coach_id())
+     and public.feedback_applies(t.player_id, t.period_start, t.period_end)
+     and not exists (select 1 from public.player_feedback fb where fb.player_id = t.player_id and fb.period_start = t.period_start
+                       and nullif(trim(coalesce(fb.progress, '') || coalesce(fb.focus, '') || coalesce(fb.homework, '')), '') is not null)
+   order by t.period_start, p.name
+$$;
 
-grant execute on function public.change_plan(uuid, date, int, time, int, text) to authenticated;
+create or replace function public.feedback_overview()
+returns table (player_id uuid, name text, period_start date, period_end date, coach_name text, parent_name text, email text, phone text,
+               feedback_id uuid, progress text, focus text, homework text, sent_at timestamptz, status text)
+language sql stable security definer set search_path = public as $$
+  with trained as (
+    select f.period_start, f.period_end, sp.player_id,
+           (array_agg(s.coach_id order by s.session_date desc))[1] as last_coach
+      from public.feedback_periods() f
+      join public.sessions s on s.session_date between f.period_start and f.period_end
+      join public.session_players sp on sp.session_id = s.id
+     where s.outcome = 'attended' and not s.imported and s.format in ('1:1', '2:1', '4:1')
+     group by 1, 2, 3
+  )
+  select t.player_id, p.name, t.period_start, t.period_end, c.name, p.parent_name, p.email, p.phone,
+         fb.id, fb.progress, fb.focus, fb.homework, fb.sent_at,
+         case when fb.sent_at is not null then 'sent' when fb.id is not null then 'ready' else 'waiting' end
+    from trained t
+    join public.players p on p.id = t.player_id
+    left join public.coaches c on c.id = coalesce(p.main_coach_id, t.last_coach)
+    left join public.player_feedback fb on fb.player_id = t.player_id and fb.period_start = t.period_start
+   where public.is_admin()
+     and (fb.id is not null or public.feedback_applies(t.player_id, t.period_start, t.period_end))
+   order by t.period_start desc, 14 desc, p.name
+$$;
+
+-- not regular players: no feedback needed
+update public.players set feedback_mode = 'never'
+ where name in ('Lewi Basnett', 'Nicholas Hagios', 'Nicolas Calder', 'Noah Peacock', 'Ruby Betro');

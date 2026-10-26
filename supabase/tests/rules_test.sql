@@ -1346,7 +1346,7 @@ select pg_temp.check('feedback periods are two months long and due from the 25th
   (select bool_and(period_end = (period_start + interval '2 months' - interval '1 day')::date and due_on = (period_start + interval '1 month' + interval '24 days')::date
                    and due_on <= public.today_sydney()) from public.feedback_periods()));
 reset role;
-insert into public.players (id, name, main_coach_id) values ('00000000-0000-0000-0000-0000000fee01', 'Fiona Feedback', '00000000-0000-0000-0000-0000000000c2');
+insert into public.players (id, name, main_coach_id, feedback_mode) values ('00000000-0000-0000-0000-0000000fee01', 'Fiona Feedback', '00000000-0000-0000-0000-0000000000c2', 'always');
 insert into public.sessions (id, session_date, coach_id, format, outcome, logged_at, topic) values
   ('00000000-0000-0000-0000-0000000fee11', (select min(period_start) + 5 from public.feedback_periods()), '00000000-0000-0000-0000-0000000000c3', '1:1', 'attended', now(), 'x');
 insert into public.session_players (session_id, player_id) values ('00000000-0000-0000-0000-0000000fee11', '00000000-0000-0000-0000-0000000fee01');
@@ -1362,6 +1362,38 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
 select pg_temp.check('Jan sees it ready to send', (select status = 'ready' and progress like '%first touch%' from public.feedback_overview() where player_id = '00000000-0000-0000-0000-0000000fee01'));
 select public.feedback_sent(:'fbid');
 select pg_temp.check('and marks it sent', (select status = 'sent' from public.feedback_overview() where player_id = '00000000-0000-0000-0000-0000000fee01'));
+
+-- ---------- feedback only for regular players ----------
+reset role;
+insert into public.players (id, name, main_coach_id, feedback_mode) values
+  ('00000000-0000-0000-0000-0000000fee02', 'Rita Regular', '00000000-0000-0000-0000-0000000000c2', 'auto'),
+  ('00000000-0000-0000-0000-0000000fee03', 'Casey Casual', '00000000-0000-0000-0000-0000000000c2', 'auto'),
+  ('00000000-0000-0000-0000-0000000fee04', 'Nora Never', '00000000-0000-0000-0000-0000000000c2', 'never'),
+  ('00000000-0000-0000-0000-0000000fee05', 'Alma Always', '00000000-0000-0000-0000-0000000000c2', 'always');
+insert into public.sessions (id, session_date, coach_id, format, outcome, logged_at, topic)
+select ('00000000-0000-0000-0000-00000fee1' || lpad(n::text, 3, '0'))::uuid, (select min(period_start) + n from public.feedback_periods()),
+       '00000000-0000-0000-0000-0000000000c3', '1:1', 'attended', now(), 'x'
+  from generate_series(1, 12) n;
+-- Rita: sessions 1-4, Casey: session 5, Nora: sessions 6-9, Alma: session 10
+insert into public.session_players (session_id, player_id)
+select ('00000000-0000-0000-0000-00000fee1' || lpad(n::text, 3, '0'))::uuid,
+       case when n <= 4 then '00000000-0000-0000-0000-0000000fee02'::uuid when n = 5 then '00000000-0000-0000-0000-0000000fee03'::uuid
+            when n <= 9 then '00000000-0000-0000-0000-0000000fee04'::uuid else '00000000-0000-0000-0000-0000000fee05'::uuid end
+  from generate_series(1, 10) n;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select pg_temp.check('a player with four or more sessions in the period is asked for feedback',
+  exists (select 1 from public.feedback_due('00000000-0000-0000-0000-0000000000c2') where player_id = '00000000-0000-0000-0000-0000000fee02'));
+select pg_temp.check('a casual player with one session is not',
+  not exists (select 1 from public.feedback_due('00000000-0000-0000-0000-0000000000c2') where player_id = '00000000-0000-0000-0000-0000000fee03'));
+select pg_temp.check('a player set to never is not asked, however often they train',
+  not exists (select 1 from public.feedback_due('00000000-0000-0000-0000-0000000000c2') where player_id = '00000000-0000-0000-0000-0000000fee04'));
+select pg_temp.check('a player set to always is asked even with one session',
+  exists (select 1 from public.feedback_due('00000000-0000-0000-0000-0000000000c2') where player_id = '00000000-0000-0000-0000-0000000fee05'));
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select pg_temp.check('Jan''s overview leaves out the players who do not need feedback',
+  exists (select 1 from public.feedback_overview() where player_id = '00000000-0000-0000-0000-0000000fee02')
+  and not exists (select 1 from public.feedback_overview() where player_id in ('00000000-0000-0000-0000-0000000fee03', '00000000-0000-0000-0000-0000000fee04')));
 
 -- ---------- changing a regular session going forward ----------
 reset role;

@@ -20,7 +20,7 @@ type Player = {
   id: string; name: string; family: string | null; billing_model: 'package' | 'pay_per_session';
   session_price: number | null; main_coach_id: string | null; active: boolean; opening_confirmed: boolean; profile_notes: string | null; drive_folder_id?: string | null;
   created_by: string | null; monthly_recurring?: boolean; pair_price?: number | null;
-  payment_plan?: PaymentPlan; casual_method?: 'stripe' | 'cash' | 'bank' | null;
+  payment_plan?: PaymentPlan; casual_method?: 'stripe' | 'cash' | 'bank' | null; feedback_mode?: 'auto' | 'always' | 'never';
   parent_name?: string | null; dob?: string | null; email?: string | null; phone?: string | null; club?: string | null;
   position?: string | null; foot?: string | null; heard_from?: string | null; form_age_group?: string | null; enquiry_id?: string | null;
 };
@@ -170,6 +170,7 @@ export default function PlayerPage() {
         <p className="hint">Prices ex GST: 1:1 {money(p.session_price ?? 120)} a session, 2:1 {money(p.pair_price ?? 75)} per player a session{p.session_price === null && p.pair_price == null ? ' (standard)' : ''}.</p>
       )}
       {isAdmin && <PaymentSettings p={p} onSaved={load} />}
+      {isAdmin && <FeedbackSetting p={p} onSaved={load} />}
 
       {p.profile_notes && <div className="notice ok"><strong>Arrangement:</strong> {p.profile_notes}</div>}
 
@@ -538,6 +539,34 @@ function RecordPackage({ playerId, name, billing, onSaved }: { playerId: string;
         {msg && <div className="notice ok" role="status">{msg}</div>}
         <button className="btn small" disabled={busy}>{busy ? 'Saving' : 'Add package'}</button>
       </form>
+    </details>
+  );
+}
+
+const FEEDBACK_LABEL = { auto: 'Automatic', always: 'Always', never: 'Never' } as const;
+
+/** Jan only: does this player get the two-monthly feedback? Automatic means regular players only. */
+function FeedbackSetting({ p, onSaved }: { p: Player; onSaved: () => void }) {
+  const current = p.feedback_mode ?? 'auto';
+  const [err, setErr] = useState('');
+  async function pick(mode: 'auto' | 'always' | 'never') {
+    setErr('');
+    const { error } = await supabase.from('players').update({ feedback_mode: mode }).eq('id', p.id);
+    if (error) setErr(errorText(error)); else onSaved();
+  }
+  return (
+    <details className="panel">
+      <summary>Feedback every two months: {FEEDBACK_LABEL[current]}</summary>
+      <div className="seg" style={{ marginBottom: 12 }}>
+        {(['auto', 'always', 'never'] as const).map((m) => (
+          <button key={m} type="button" aria-pressed={current === m} onClick={() => pick(m)}>{FEEDBACK_LABEL[m]}</button>
+        ))}
+      </div>
+      <p className="hint">
+        <strong>Automatic:</strong> only for regular players, meaning a regular weekly session or at least 4 sessions in the two months (late cancellations count).
+        <strong> Always</strong> asks the coach every period. <strong>Never</strong> leaves {p.name.split(' ')[0]} out, for example a casual or one-off player.
+      </p>
+      {err && <div className="notice err">{err}</div>}
     </details>
   );
 }
