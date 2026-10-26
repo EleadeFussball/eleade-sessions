@@ -9,7 +9,7 @@ import { fmtDate, todayISO } from '@/lib/dates';
 import { normaliseTime } from '@/lib/time';
 import { FORMAT_LABEL, MAX_PLAYERS, placeField, placeLabel, type Format } from '@/lib/types';
 
-type Plan = { id: string; coach_id: string; format: Format; weekday: number; start_time: string; location: string | null;
+type Plan = { id: string; coach_id: string; format: Format; weekday: number; start_time: string; location: string | null; minutes: number;
   starts_on: string; ends_on: string | null; plan_players: { player_id: string; players: { name: string } | null }[] };
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -30,6 +30,12 @@ export function RegularSessions({ playerId }: { playerId: string }) {
   const [coachId, setCoachId] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [changing, setChanging] = useState<Plan | null>(null);
+  const [cDay, setCDay] = useState(0);
+  const [cTime, setCTime] = useState('');
+  const [cMinutes, setCMinutes] = useState(60);
+  const [cLocation, setCLocation] = useState('');
+  const [cFrom, setCFrom] = useState(todayISO());
 
   const load = useCallback(async () => {
     const { data: links } = await supabase.from('plan_players').select('plan_id').eq('player_id', playerId);
@@ -68,6 +74,27 @@ export function RegularSessions({ playerId }: { playerId: string }) {
     load();
   }
 
+  function startChange(p: Plan) {
+    setChanging(p); setErr('');
+    setCDay(p.weekday - 1); setCTime(p.start_time.slice(0, 5)); setCMinutes(p.minutes || 60);
+    setCLocation(p.location ?? ''); setCFrom(p.starts_on > todayISO() ? p.starts_on : todayISO());
+  }
+
+  async function saveChange(e: React.FormEvent) {
+    e.preventDefault(); setErr('');
+    if (!changing) return;
+    const t = normaliseTime(cTime);
+    if (!t) { setErr('Add a start time, like 630, 6:30 or 1800.'); return; }
+    setBusy(true);
+    const { error } = await supabase.rpc('change_plan', {
+      p_plan_id: changing.id, p_from: cFrom, p_weekday: cDay + 1, p_start_time: t, p_minutes: cMinutes, p_location: cLocation,
+    });
+    setBusy(false);
+    if (error) { setErr(errorText(error)); return; }
+    setChanging(null);
+    load();
+  }
+
   async function stop(p: Plan) {
     if (!window.confirm(`Stop the regular ${DAYS[p.weekday - 1]} session? Past sessions stay in the history.`)) return;
     const { error } = await supabase.from('session_plans').update({ ends_on: today }).eq('id', p.id);
@@ -84,13 +111,53 @@ export function RegularSessions({ playerId }: { playerId: string }) {
             <li key={p.id} className="session">
               <div className="head">
                 <span>{DAYS[p.weekday - 1]}s at {p.start_time.slice(0, 5)}</span>
-                {canManage(p) && <button type="button" className="linkbtn" onClick={() => stop(p)}>Stop</button>}
+                {canManage(p) && (
+                  <span>
+                    <button type="button" className="linkbtn" onClick={() => startChange(p)}>Change</button>{' '}
+                    <button type="button" className="linkbtn" onClick={() => stop(p)}>Stop</button>
+                  </span>
+                )}
               </div>
               <div className="sub">
                 {FORMAT_LABEL[p.format]} with {coachName(p.coach_id)}{p.location ? `, ${placeLabel(p.format, p.location)}` : ''}
                 {p.plan_players.length > 1 ? `, together with ${p.plan_players.filter((x) => x.player_id !== playerId).map((x) => x.players?.name).join(', ')}` : ''}
                 {p.starts_on > today ? `, starts ${fmtDate(p.starts_on)}` : ''}
               </div>
+              {changing?.id === p.id && (
+                <form onSubmit={saveChange} className="panel-form mt">
+                  <div className="field">
+                    <span className="fieldlabel">New day</span>
+                    <div className="seg">
+                      {DAYS.map((d, i) => <button key={d} type="button" aria-pressed={cDay === i} onClick={() => setCDay(i)}>{d.slice(0, 3)}</button>)}
+                    </div>
+                  </div>
+                  <div className="row">
+                    <label className="field" style={{ flex: '0 0 120px' }}><span>Start</span>
+                      <input type="text" inputMode="numeric" value={cTime} onChange={(e) => setCTime(e.target.value)}
+                             onBlur={() => setCTime(normaliseTime(cTime) || cTime)} /></label>
+                    <label className="field"><span>{placeField(p.format).label}</span>
+                      <input type="text" list={p.format === 'analysis' ? undefined : 'pitches'} value={cLocation} onChange={(e) => setCLocation(e.target.value)} /></label>
+                  </div>
+                  <div className="field">
+                    <span className="fieldlabel">Length</span>
+                    <div className="seg">
+                      {[45, 60, 90, 120].map((m) => (
+                        <button key={m} type="button" aria-pressed={cMinutes === m} onClick={() => setCMinutes(m)}>
+                          {m < 60 ? `${m}m` : m % 60 === 0 ? `${m / 60}h` : `${Math.floor(m / 60)}h${m % 60}`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <label className="field"><span>Change starts from</span>
+                    <input type="date" min={todayISO()} value={cFrom} onChange={(e) => setCFrom(e.target.value)} /></label>
+                  <p className="hint">Sessions before this date stay as they are. From this date the session follows the new day and time. For a single week only, use Move on the calendar instead.</p>
+                  {err && <div className="notice err" role="alert">{err}</div>}
+                  <div className="row">
+                    <button className="btn small" disabled={busy}>{busy ? 'Saving' : 'Save change'}</button>
+                    <button type="button" className="btn small ghost" onClick={() => { setChanging(null); setErr(''); }}>Cancel</button>
+                  </div>
+                </form>
+              )}
             </li>
           ))}
         </ul>

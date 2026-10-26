@@ -10,6 +10,7 @@ import { FeedbackHistory } from '@/components/FeedbackHistory';
 import { creditClass } from '@/lib/usePlayers';
 import { SessionItem } from '@/components/SessionItem';
 import { RegularSessions } from '@/components/RegularSessions';
+import { PackageCoverage } from '@/components/PackageCoverage';
 import { AssessmentPayment } from '@/components/AssessmentPayment';
 import { EnquiryInfo } from '@/components/EnquiryInfo';
 import { fmtDate, fromISO, money, num, toISO, todayISO } from '@/lib/dates';
@@ -108,6 +109,7 @@ export default function PlayerPage() {
   const live = sessions.filter((s) => !s.imported);
   const old = sessions.filter((s) => s.imported);
   const cls = creditClass(bal);
+  const hasPairs = bal.pairs_left !== null && bal.pairs_left !== undefined;
 
   return (
     <>
@@ -137,14 +139,16 @@ export default function PlayerPage() {
       {p.billing_model === 'package' ? (
         <>
           <div className="scoreboard">
-            <div><div className={`big ${cls}`}>{num(bal.sessions_left)}</div><div className="cap">sessions left</div></div>
+            <div><div className={`big ${cls}`}>{num(bal.sessions_left)}</div><div className="cap">{hasPairs ? '1:1 sessions left' : 'sessions left'}</div></div>
             {bal.pairs_left !== null && bal.pairs_left !== undefined && (
               <div><div className={`big${Number(bal.pairs_left) < 0 ? ' out' : ''}`}>{num(bal.pairs_left)}</div><div className="cap">{Number(bal.pairs_left) < 0 ? '2:1 sessions to pay' : '2:1 sessions left'}</div></div>
             )}
             <div><div className="big">{num(bal.analyses_left)}</div><div className="cap">game analyses left</div></div>
           </div>
           {!p.opening_confirmed && p.billing_model === 'package' && <div className="notice warn">Balance not checked yet.</div>}
-          {p.opening_confirmed && Number(bal.sessions_left ?? 0) <= 0 && <div className="notice err">New package needed: no sessions left.</div>}
+          {p.opening_confirmed && !hasPairs && Number(bal.sessions_left ?? 0) <= 0 && <div className="notice err">New package needed: no sessions left.</div>}
+          {p.opening_confirmed && hasPairs && Number(bal.sessions_left ?? 0) < 0 && <div className="notice err">1:1 sessions to pay: a new 1:1 package is needed.</div>}
+          {p.opening_confirmed && hasPairs && Number(bal.pairs_left ?? 0) <= 0 && <div className="notice err">New 2:1 package needed: no 2:1 sessions left.</div>}
           {expiry.filter((e) => e.player_id === p.id || (p.family && e.family === p.family)).map((e) => (
             <div key={e.expires_on} className="notice warn">
               {e.days_left >= 0
@@ -159,6 +163,8 @@ export default function PlayerPage() {
           ? `Casual: pays each session on its own${p.casual_method ? ` by ${CASUAL_METHOD_LABEL[p.casual_method].toLowerCase()}` : ''}`
           : 'Pays weekly by bank transfer'}{p.session_price ? `, ${money(p.session_price)} a session` : ''}. No credits to track.</div>
       )}
+
+      {p.billing_model === 'package' && <PackageCoverage playerId={p.id} family={p.family} />}
 
       {isAdmin && (
         <p className="hint">Prices ex GST: 1:1 {money(p.session_price ?? 120)} a session, 2:1 {money(p.pair_price ?? 75)} per player a session{p.session_price === null && p.pair_price == null ? ' (standard)' : ''}.</p>

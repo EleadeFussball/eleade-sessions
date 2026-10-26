@@ -1281,8 +1281,8 @@ select pg_temp.check('other coaches do not see someone else''s documentation lis
   (select count(*) = 0 from public.undocumented_sessions('00000000-0000-0000-0000-0000000000c9')));
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
 select pg_temp.check('training videos are due 4 to 6 weeks after the start',
-  (select bool_and(due_on between (select (value #>> '{}')::date from public.settings where key = 'videos_from') + 28
-                               and (select (value #>> '{}')::date from public.settings where key = 'videos_from') + 42)
+  (select bool_and(due_on between greatest(coalesce(last_clip, date '2000-01-01'), (select (value #>> '{}')::date from public.settings where key = 'videos_from')) + 28
+                               and greatest(coalesce(last_clip, date '2000-01-01'), (select (value #>> '{}')::date from public.settings where key = 'videos_from')) + 42)
      from public.videos_due('00000000-0000-0000-0000-0000000000c2')));
 
 -- ---------- MYOB reminders: edit the package, send, then confirm the payment ----------
@@ -1362,6 +1362,52 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
 select pg_temp.check('Jan sees it ready to send', (select status = 'ready' and progress like '%first touch%' from public.feedback_overview() where player_id = '00000000-0000-0000-0000-0000000fee01'));
 select public.feedback_sent(:'fbid');
 select pg_temp.check('and marks it sent', (select status = 'sent' from public.feedback_overview() where player_id = '00000000-0000-0000-0000-0000000fee01'));
+
+-- ---------- changing a regular session going forward ----------
+reset role;
+insert into public.players (id, name) values ('00000000-0000-0000-0000-0000000000bb', 'Change Kid');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.create_plan('00000000-0000-0000-0000-0000000000c2', '1:1', extract(isodow from public.today_sydney())::int,
+  '00:00', array['00000000-0000-0000-0000-0000000000bb']::uuid[], 'Moore Park', public.today_sydney() - 14) as chg_old \gset
+select public.set_plan_minutes(:'chg_old', 15);
+select public.confirm_plan_session(:'chg_old', public.today_sydney(), 'attended', 'Passing', 'Good', null);
+select set_config('t.old', :'chg_old', false);
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a3';
+do $$ begin
+  begin
+    perform public.change_plan(current_setting('t.old')::uuid, public.today_sydney() + 3, 3, '18:30', 45, null);
+    perform pg_temp.check('another coach cannot change someone else''s regular session', false);
+  exception when others then perform pg_temp.check('another coach cannot change someone else''s regular session', true);
+  end;
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+do $$ begin
+  begin
+    perform public.change_plan(current_setting('t.old')::uuid, public.today_sydney() - 1, 3, '18:30', 45, null);
+    perform pg_temp.check('a regular session cannot be changed from a past date', false);
+  exception when others then perform pg_temp.check('a regular session cannot be changed from a past date', true);
+  end;
+end $$;
+select public.change_plan(:'chg_old', public.today_sydney() + 3, 3, '18:30', 45, 'Rushcutters Bay') as chg_new \gset
+select pg_temp.check('changing from a date starts a new plan and ends the old one the day before',
+  :'chg_new' <> :'chg_old'
+  and (select ends_on = public.today_sydney() + 2 from public.session_plans where id = :'chg_old')
+  and (select weekday = 3 and start_time = '18:30' and minutes = 45 and location = 'Rushcutters Bay' and starts_on = public.today_sydney() + 3
+              and coach_id = '00000000-0000-0000-0000-0000000000c2' and format = '1:1' and ends_on is null
+         from public.session_plans where id = :'chg_new')
+  and (select count(*) from public.plan_players where plan_id = :'chg_new' and player_id = '00000000-0000-0000-0000-0000000000bb') = 1);
+select pg_temp.check('sessions before the change stay on the old plan, later ones come from the new plan',
+  (select bool_and(plan_id = :'chg_old') and count(*) > 0 from public.plan_occurrences(public.today_sydney() - 7, public.today_sydney() + 2) where plan_id in (:'chg_old', :'chg_new'))
+  and (select bool_and(plan_id = :'chg_new' and extract(isodow from plan_date) = 3) and count(*) > 0
+         from public.plan_occurrences(public.today_sydney() + 3, public.today_sydney() + 30) where plan_id in (:'chg_old', :'chg_new')));
+do $$ begin
+  begin
+    perform public.change_plan(current_setting('t.old')::uuid, public.today_sydney(), 4, '09:00', null, null);
+    perform pg_temp.check('a change cannot start before sessions that are already logged', false);
+  exception when others then perform pg_temp.check('a change cannot start before sessions that are already logged', true);
+  end;
+end $$;
 
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;

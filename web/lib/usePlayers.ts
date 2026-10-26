@@ -35,9 +35,11 @@ export function usePlayers(includeInactive = false) {
   return { players, loading, error, reload: load, createPlayer };
 }
 
-export function creditClass(p: Pick<PlayerBalance, 'billing_model' | 'sessions_left'>, threshold = 2): string {
+export function creditClass(p: Pick<PlayerBalance, 'billing_model' | 'sessions_left'> & { pairs_left?: number | null }, threshold = 2): string {
   if (p.billing_model !== 'package' || p.sessions_left === null) return 'none';
-  const n = Number(p.sessions_left);
+  // A player with a separate 2:1 package: judge by the 2:1 sessions, plus the 1:1 sessions once they have any (or owe some).
+  const hasPairs = p.pairs_left !== null && p.pairs_left !== undefined;
+  const n = hasPairs ? (Number(p.sessions_left) === 0 ? Number(p.pairs_left) : Math.min(Number(p.sessions_left), Number(p.pairs_left))) : Number(p.sessions_left);
   if (n <= 0) return 'out';
   if (n <= threshold) return 'low';
   return '';
