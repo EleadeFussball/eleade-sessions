@@ -127,7 +127,7 @@ export function EditSession({ sessionId, onDone, onCancel, onDelete }:
           <span className="fieldlabel">How was it paid?</span>
           <div className="seg">
             <button type="button" aria-pressed={method === ''} onClick={() => setMethod('')}>{format === 'assessment' ? 'Not paid yet' : 'Package credit'}</button>
-            {(['cash', 'stripe', 'bank'] as PaymentMethod[]).map((m) => (
+            {(['cash', 'stripe', 'bank', ...(method === 'other' ? ['other'] : [])] as PaymentMethod[]).map((m) => (
               <button key={m} type="button" aria-pressed={method === m} onClick={() => setMethod(m)}>{m === 'cash' ? 'Paid cash' : PAYMENT_LABEL[m]}</button>
             ))}
           </div>

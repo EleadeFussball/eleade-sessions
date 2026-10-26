@@ -12,7 +12,7 @@ import { ClipButton } from '@/components/ClipUpload';
 
 const FORMATS: Format[] = ['1:1', '2:1', '4:1', 'analysis', 'assessment', 'testing'];
 const LENGTHS = [45, 60, 90, 120];
-type Method = '' | 'cash' | 'stripe' | 'bank';
+type Method = '' | 'cash' | 'stripe' | 'bank' | 'other';
 type Folder = { id: string; name: string; drive_folder_id: string | null };
 
 /**
@@ -70,6 +70,9 @@ export function LogFlow({ o, onDone, onCancel }: { o: ScheduleEntry; onDone: () 
   }, [ids, players]);
   useEffect(() => { if (casualKey && format !== 'assessment' && format !== 'testing') setMethod(casualKey); }, [casualKey, format]);
 
+  // Casual players never use package credit: the package option is hidden and a method is always set.
+  const allCasual = useMemo(() => ids.length > 0 && ids.every((id) => players.find((p) => p.player_id === id)?.payment_plan === 'casual'), [ids, players]);
+
   const attended = outcome === 'attended';
   const showType = !future;
   const showPay = !future && outcome !== 'cancelled_in_time' && format !== 'testing';
@@ -85,6 +88,7 @@ export function LogFlow({ o, onDone, onCancel }: { o: ScheduleEntry; onDone: () 
     if ((format === '2:1' || format === '4:1') && ids.length < 2) { setErr(`A ${format} session needs 2 players. Add the other player under More settings, or choose 1:1.`); return; }
     if (format === 'analysis' && attended && (!location.trim() || !topic.trim())) { setErr('For a game analysis, add the opponent and the key focus points.'); return; }
     if (ids.length > MAX_PLAYERS[format]) { setErr(`A ${FORMAT_LABEL[format]} session can have at most ${MAX_PLAYERS[format]} player${MAX_PLAYERS[format] === 1 ? '' : 's'}.`); return; }
+    if (showPay && allCasual && format !== 'assessment' && !method) { setErr('This player is a casual player, so the session needs a way of paying (cash, Stripe, bank transfer or pays Jan directly). It cannot use package credit.'); return; }
     setBusy(true);
     const pay = showPay ? method : '';
     const notes = attended ? { topic, obs, improve, method: pay } : { obs, method: pay };
@@ -139,12 +143,14 @@ export function LogFlow({ o, onDone, onCancel }: { o: ScheduleEntry; onDone: () 
         <div className="step">
           <div className="step-h"><span className="step-n">{step()}</span>How it was paid</div>
           <div className="seg">
-            <button type="button" aria-pressed={method === ''} onClick={() => setMethod('')}>{standard}</button>
+            {!(allCasual && format !== 'assessment') && <button type="button" aria-pressed={method === ''} onClick={() => setMethod('')}>{standard}</button>}
+            {(casualKey === 'other' || method === 'other') && <button type="button" aria-pressed={method === 'other'} onClick={() => setMethod('other')}>Pays Jan directly</button>}
             <button type="button" aria-pressed={method === 'cash'} onClick={() => setMethod('cash')}>Paid cash</button>
             <button type="button" aria-pressed={method === 'stripe'} onClick={() => setMethod('stripe')}>Stripe</button>
             <button type="button" aria-pressed={method === 'bank'} onClick={() => setMethod('bank')}>Bank transfer</button>
           </div>
           {method === 'stripe' && <StripeNote playerIds={ids} />}
+          {method === 'other' && <p className="hint mt">This player pays Jan directly. The session shows as awaiting payment until Jan confirms it, and you are paid through your invoice as normal. No package credit is used.</p>}
           {method === '' && unused.length > 0 && <p className="hint mt">A Stripe payment from this player is waiting. If it was for this session, tap Stripe.</p>}
           {method === 'cash' && !coach?.salaried && <p className="hint mt">You keep the cash. It is taken off your weekly invoice automatically.</p>}
         </div>

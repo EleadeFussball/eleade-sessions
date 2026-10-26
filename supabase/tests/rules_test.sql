@@ -1441,6 +1441,40 @@ do $$ begin
   end;
 end $$;
 
+-- ---------- casual players are never package credit ----------
+reset role;
+insert into public.players (id, name, main_coach_id, payment_plan, casual_method) values
+  ('00000000-0000-0000-0000-0000000ca501', 'Cas Ual', '00000000-0000-0000-0000-0000000000c2', 'casual', 'other'),
+  ('00000000-0000-0000-0000-0000000ca502', 'Cass Stripe', '00000000-0000-0000-0000-0000000000c2', 'casual', 'stripe');
+insert into public.players (id, name, main_coach_id) values ('00000000-0000-0000-0000-0000000ca503', 'Pack Age', '00000000-0000-0000-0000-0000000000c2');
+insert into public.sessions (id, session_date, coach_id, format, outcome, logged_at, topic) values
+  ('00000000-0000-0000-0000-0000000ca511', public.today_sydney() - 2, '00000000-0000-0000-0000-0000000000c3', '1:1', 'attended', now(), 'x'),
+  ('00000000-0000-0000-0000-0000000ca512', public.today_sydney() - 2, '00000000-0000-0000-0000-0000000000c3', '1:1', 'attended', now(), 'x'),
+  ('00000000-0000-0000-0000-0000000ca513', public.today_sydney() - 2, '00000000-0000-0000-0000-0000000000c3', '2:1', 'attended', now(), 'x'),
+  ('00000000-0000-0000-0000-0000000ca514', public.today_sydney() - 2, '00000000-0000-0000-0000-0000000000c3', '1:1', 'cancelled_in_time', now(), 'x');
+insert into public.session_players (session_id, player_id) values
+  ('00000000-0000-0000-0000-0000000ca511', '00000000-0000-0000-0000-0000000ca501'),
+  ('00000000-0000-0000-0000-0000000ca512', '00000000-0000-0000-0000-0000000ca502'),
+  ('00000000-0000-0000-0000-0000000ca513', '00000000-0000-0000-0000-0000000ca501'),
+  ('00000000-0000-0000-0000-0000000ca513', '00000000-0000-0000-0000-0000000ca503'),
+  ('00000000-0000-0000-0000-0000000ca514', '00000000-0000-0000-0000-0000000ca501');
+select pg_temp.check('casual: a session logged without a method gets the way the player pays (Other = pays Jan directly)',
+  (select payment_method = 'other' and payment_status = 'awaiting' from public.sessions where id = '00000000-0000-0000-0000-0000000ca511'));
+select pg_temp.check('casual: Stripe players get Stripe',
+  (select payment_method = 'stripe' from public.sessions where id = '00000000-0000-0000-0000-0000000ca512'));
+select pg_temp.check('a session shared with a package player still uses package credit',
+  (select payment_method is null from public.sessions where id = '00000000-0000-0000-0000-0000000ca513'));
+select pg_temp.check('a cancelled in time session is left alone',
+  (select payment_method is null from public.sessions where id = '00000000-0000-0000-0000-0000000ca514'));
+update public.sessions set payment_method = null where id = '00000000-0000-0000-0000-0000000ca511';
+select pg_temp.check('picking package credit again for a casual player is put back',
+  (select payment_method = 'other' from public.sessions where id = '00000000-0000-0000-0000-0000000ca511'));
+update public.sessions set outcome = 'attended' where id = '00000000-0000-0000-0000-0000000ca514';
+select pg_temp.check('confirming a casual session later also gets the method',
+  (select payment_method = 'other' from public.sessions where id = '00000000-0000-0000-0000-0000000ca514'));
+select pg_temp.check('casual sessions use no package credit',
+  not exists (select 1 from public.credit_usage where session_id in ('00000000-0000-0000-0000-0000000ca511', '00000000-0000-0000-0000-0000000ca512', '00000000-0000-0000-0000-0000000ca514')));
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;

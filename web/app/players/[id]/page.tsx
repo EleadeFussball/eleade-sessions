@@ -20,7 +20,7 @@ type Player = {
   id: string; name: string; family: string | null; billing_model: 'package' | 'pay_per_session';
   session_price: number | null; main_coach_id: string | null; active: boolean; opening_confirmed: boolean; profile_notes: string | null; drive_folder_id?: string | null;
   created_by: string | null; monthly_recurring?: boolean; pair_price?: number | null;
-  payment_plan?: PaymentPlan; casual_method?: 'stripe' | 'cash' | 'bank' | null; feedback_mode?: 'auto' | 'always' | 'never';
+  payment_plan?: PaymentPlan; casual_method?: 'stripe' | 'cash' | 'bank' | 'other' | null; feedback_mode?: 'auto' | 'always' | 'never';
   parent_name?: string | null; dob?: string | null; email?: string | null; phone?: string | null; club?: string | null;
   position?: string | null; foot?: string | null; heard_from?: string | null; form_age_group?: string | null; enquiry_id?: string | null;
 };
@@ -575,7 +575,7 @@ function FeedbackSetting({ p, onSaved }: { p: Player; onSaved: () => void }) {
 function PaymentSettings({ p, onSaved }: { p: Player; onSaved: () => void }) {
   const current: PaymentPlan = p.payment_plan ?? (p.billing_model === 'package' ? (p.monthly_recurring ? 'monthly' : 'package') : 'weekly');
   const [plan, setPlan] = useState<PaymentPlan>(current);
-  const [method, setMethod] = useState<'stripe' | 'cash' | 'bank'>(p.casual_method ?? 'stripe');
+  const [method, setMethod] = useState<'stripe' | 'cash' | 'bank' | 'other'>(p.casual_method ?? 'stripe');
   const [price, setPrice] = useState(p.session_price?.toString() ?? '');
   const [pairPrice, setPairPrice] = useState(p.pair_price?.toString() ?? '');
   const [msg, setMsg] = useState('');
@@ -605,9 +605,9 @@ function PaymentSettings({ p, onSaved }: { p: Player; onSaved: () => void }) {
         {plan === 'weekly' && <p className="hint"><strong>Pays weekly:</strong> no credits. Sessions are added up each week and paid by bank transfer; you mark the week as paid on the Admin page.</p>}
         {plan === 'casual' && (
           <>
-            <p className="hint"><strong>Casual:</strong> no credits. Each session is paid on its own; this way of paying is preselected when a coach logs the session.</p>
+            <p className="hint"><strong>Casual:</strong> no credits and never package credit. Each session is paid on its own; this way of paying is preselected when a coach logs the session, and a session logged without it gets it automatically. Choose <em>Pays Jan directly</em> when the player pays you (cash or transfer) and the coach is paid through the invoice: the session shows as awaiting payment until you confirm it.</p>
             <div className="seg" style={{ marginBottom: 12 }}>
-              {(['stripe', 'cash', 'bank'] as const).map((m) => <button key={m} type="button" aria-pressed={method === m} onClick={() => setMethod(m)}>{CASUAL_METHOD_LABEL[m]}</button>)}
+              {(['stripe', 'cash', 'bank', 'other'] as const).map((m) => <button key={m} type="button" aria-pressed={method === m} onClick={() => setMethod(m)}>{CASUAL_METHOD_LABEL[m]}</button>)}
             </div>
           </>
         )}

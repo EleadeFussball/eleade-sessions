@@ -238,6 +238,11 @@ export default function LogPage() {
               <button type="button" aria-pressed={payMethod === 'stripe'} onClick={() => setPayMethod(payMethod === 'stripe' ? '' : 'stripe')}>
                 Paid by Stripe
               </button>
+              {chosen.some((p) => p.payment_plan === 'casual' && p.casual_method === 'other') && (
+                <button type="button" aria-pressed={payMethod === 'other'} onClick={() => setPayMethod(payMethod === 'other' ? '' : 'other')}>
+                  Pays Jan directly
+                </button>
+              )}
               {chosen.some((p) => p.payment_plan === 'casual') && (
                 <button type="button" aria-pressed={payMethod === 'bank'} onClick={() => setPayMethod(payMethod === 'bank' ? '' : 'bank')}>
                   Bank transfer
@@ -248,7 +253,9 @@ export default function LogPage() {
             {payMethod === 'cash' && (coach?.salaried
               ? <p className="hint mt">Paid in cash: no package credit is used and it isn’t added to a weekly transfer. Jan confirms the cash.</p>
               : <p className="hint mt">Paid in cash: you keep the cash. The amount is taken off your weekly invoice automatically, so there is nothing to hand to Jan. No package credit is used.</p>)}
-            {payMethod === '' && <p className="hint mt">Leave both off if the session uses package credit. Tap Paid cash or Paid by Stripe if the parents paid for this session on its own.</p>}
+            {payMethod === 'other' && <p className="hint mt">This player pays Jan directly. The session shows as awaiting payment until Jan confirms it. No package credit is used.</p>}
+            {payMethod === '' && chosen.length > 0 && chosen.every((p) => p.payment_plan === 'casual') && <p className="hint mt">Casual player: this session cannot use package credit. It is saved with their set way of paying and shows as awaiting payment.</p>}
+            {payMethod === '' && !(chosen.length > 0 && chosen.every((p) => p.payment_plan === 'casual')) && <p className="hint mt">Leave both off if the session uses package credit. Tap Paid cash or Paid by Stripe if the parents paid for this session on its own.</p>}
           </div>
         )}
 

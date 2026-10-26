@@ -56,7 +56,7 @@ export function savePrep(o: ScheduleEntry, topic: string) {
   return supabase.rpc('save_prep', { p_kind: o.kind, p_ref_id: o.ref_id, p_plan_date: o.plan_date, p_topic: topic });
 }
 
-export function confirmEntry(o: ScheduleEntry, outcome: Outcome, notes: { topic?: string; obs?: string; improve?: string; method?: '' | 'cash' | 'stripe' | 'bank' }) {
+export function confirmEntry(o: ScheduleEntry, outcome: Outcome, notes: { topic?: string; obs?: string; improve?: string; method?: '' | 'cash' | 'stripe' | 'bank' | 'other' }) {
   const payment = notes.method && outcome !== 'cancelled_in_time' ? notes.method : null;
   return o.kind === 'regular'
     ? supabase.rpc('confirm_plan_session', {
