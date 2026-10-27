@@ -18,7 +18,7 @@ export function ClipButton({ playerId, playerName, folderId, label, when }:
   const [picked, setPicked] = useState<{ file: File; url: string; social: boolean }[]>([]);
   const urls = useRef<string[]>([]);
   useEffect(() => () => urls.current.forEach((u) => URL.revokeObjectURL(u)), []);
-  const mine = uploads.filter((u) => u.playerId === playerId && (u.status === 'starting' || u.status === 'uploading'));
+  const mine = uploads.filter((u) => u.playerId === playerId && (u.status === 'starting' || u.status === 'compressing' || u.status === 'uploading'));
   if (!folderId) {
     return <p className="hint">{playerName}: no Drive folder linked yet. {isAdmin ? 'Link it under Google Drive on the Admin page.' : 'Jan links it on the Admin page.'}</p>;
   }

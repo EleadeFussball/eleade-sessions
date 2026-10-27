@@ -3,10 +3,11 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { supabase, errorText } from './supabase';
 import { driveApi } from './drive';
 import { todayISO } from './dates';
+import { compressClip } from './compress';
 
 export type Upload = {
   id: string; playerId: string; playerName: string; fileName: string;
-  pct: number; status: 'starting' | 'uploading' | 'done' | 'error'; error?: string; social?: boolean; socialNote?: string;
+  pct: number; status: 'starting' | 'compressing' | 'uploading' | 'done' | 'error'; error?: string; social?: boolean; socialNote?: string; sizeNote?: string;
 };
 
 /** For a clip of a past session: the session's date (and start time) go into the file name instead of today's. */
@@ -32,7 +33,7 @@ type WakeLock = { release: () => Promise<void> };
 export function UploadProvider({ children }: { children: ReactNode }) {
   const [uploads, setUploads] = useState<Upload[]>([]);
   const patch = (id: string, p: Partial<Upload>) => setUploads((u) => u.map((x) => (x.id === id ? { ...x, ...p } : x)));
-  const active = uploads.some((u) => u.status === 'starting' || u.status === 'uploading');
+  const active = uploads.some((u) => u.status === 'starting' || u.status === 'compressing' || u.status === 'uploading');
 
   // At most two uploads at a time; the rest wait their turn.
   const running = useRef(0);
@@ -45,6 +46,14 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Shrinking uses the phone's video encoder, so one clip at a time; uploads of finished ones carry on meanwhile.
+  const shrinking = useRef<Promise<unknown>>(Promise.resolve());
+  const shrink = useCallback((file: File, onPct: (n: number) => void) => {
+    const run = shrinking.current.then(() => compressClip(file, onPct));
+    shrinking.current = run.catch(() => {});
+    return run;
+  }, []);
+
   const start = useCallback((file: File, playerId: string, playerName: string, coachName?: string, social = false, part = '', when?: ClipWhen) => {
     const id = Math.random().toString(36).slice(2);
     const ext = (file.name.match(/\.[a-z0-9]{2,5}$/i)?.[0] ?? '.mp4').toLowerCase();
@@ -53,13 +62,20 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     const hhmm = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
     // today's clips: date and time of upload; clips for a past session: the session's date (and its start time when known)
     const stamp = when ? `${when.date}${when.time ? ` ${when.time.replace(':', '').slice(0, 4)}` : ''}` : `${todayISO()} ${hhmm}`;
-    const fileName = `${stamp} ${playerName}${first ? ` (${first})` : ''}${part ? ` ${part}` : ''}${ext}`;
-    setUploads((u) => [...u, { id, playerId, playerName, fileName, pct: 0, status: 'starting', social }]);
+    const baseName = `${stamp} ${playerName}${first ? ` (${first})` : ''}${part ? ` ${part}` : ''}`;
+    setUploads((u) => [...u, { id, playerId, playerName, fileName: baseName + ext, pct: 0, status: 'starting', social }]);
     queue.current.push(async () => {
       try {
-        const mime = file.type || 'video/mp4';
-        const { url } = await driveApi<{ url: string }>('/api/drive/upload', { player_id: playerId, file_name: fileName, mime, size: file.size });
-        patch(id, { status: 'uploading' });
+        // shrink first (clearly smaller, same look), otherwise send the original untouched
+        patch(id, { status: 'compressing', pct: 0 });
+        const res = await shrink(file, (pct) => patch(id, { pct }));
+        const sendFile = res.file;
+        const fileName = baseName + (res.compressed ? '.mp4' : ext);
+        const mb = (n: number) => `${Math.max(1, Math.round(n / 1048576))} MB`;
+        const sizeNote = res.compressed ? ` (shrunk from ${mb(file.size)} to ${mb(sendFile.size)})` : '';
+        const mime = sendFile.type || 'video/mp4';
+        patch(id, { status: 'uploading', pct: 0, fileName, sizeNote });
+        const { url } = await driveApi<{ url: string }>('/api/drive/upload', { player_id: playerId, file_name: fileName, mime, size: sendFile.size });
         const fileId = await new Promise<string>((resolve, reject) => {
           const x = new XMLHttpRequest();
           x.open('PUT', url);
@@ -70,7 +86,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
             else reject(new Error(`Upload stopped (${x.status}). Try again on a better connection.`));
           };
           x.onerror = () => reject(new Error('Upload stopped. Keep eleade Hub open until it finishes, then try again.'));
-          x.send(file);
+          x.send(sendFile);
         });
         const { data: clipId } = await supabase.rpc('record_clip', { p_player_id: playerId, p_file_id: fileId, p_file_name: fileName });
         let socialNote = '';
@@ -86,7 +102,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       }
     });
     pump();
-  }, [pump]);
+  }, [pump, shrink]);
 
   const dismiss = useCallback((id: string) => setUploads((u) => u.filter((x) => x.id !== id)), []);
 
@@ -116,14 +132,14 @@ export function UploadBar() {
         <div key={u.id} className={`upload ${u.status}`}>
           <div className="upload-line">
             <span>
-              {u.status === 'done' ? `Clip saved to ${u.playerName}'s folder${u.socialNote ?? ''}` : u.status === 'error' ? `${u.playerName} clip not uploaded` : u.status === 'starting' ? `${u.playerName} clip waiting to upload` : `Uploading ${u.playerName} clip ${u.pct}%`}
+              {u.status === 'done' ? `Clip saved to ${u.playerName}'s folder${u.sizeNote ?? ''}${u.socialNote ?? ''}` : u.status === 'error' ? `${u.playerName} clip not uploaded` : u.status === 'starting' ? `${u.playerName} clip waiting` : u.status === 'compressing' ? `Shrinking ${u.playerName} clip ${u.pct}%` : `Uploading ${u.playerName} clip ${u.pct}%`}
             </span>
             {(u.status === 'done' || u.status === 'error') && <button type="button" className="linkbtn" onClick={() => dismiss(u.id)} aria-label="Close">×</button>}
           </div>
-          {(u.status === 'uploading' || u.status === 'starting') && (
+          {(u.status === 'uploading' || u.status === 'compressing' || u.status === 'starting') && (
             <>
               <div className="upload-track"><div className="upload-fill" style={{ width: `${u.pct}%` }} /></div>
-              <div className="upload-hint">You can keep using eleade Hub. Keep the app open until it reaches 100%.</div>
+              <div className="upload-hint">{u.status === 'compressing' ? 'Shrinking the clip first so it uploads faster and saves storage, with no visible loss of quality. ' : ''}You can keep using eleade Hub. Keep the app open until it is saved.</div>
             </>
           )}
           {u.status === 'error' && <div className="upload-hint">{u.error}</div>}

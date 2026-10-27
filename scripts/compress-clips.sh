@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# (The app now shrinks clips by itself while they upload. This script is only for clips that are already on a computer.)
 # Shrink training clips without a visible loss of quality (H.265, CRF 23, same resolution up to 1080p).
 # Originals are never touched: smaller copies go into a "compressed" folder next to them.
 #
