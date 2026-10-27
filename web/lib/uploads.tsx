@@ -72,7 +72,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
         const sendFile = res.file;
         const fileName = baseName + (res.compressed ? '.mp4' : ext);
         const mb = (n: number) => `${Math.max(1, Math.round(n / 1048576))} MB`;
-        const sizeNote = res.compressed ? ` (shrunk from ${mb(file.size)} to ${mb(sendFile.size)})` : '';
+        const sizeNote = res.compressed ? ` (shrunk from ${mb(file.size)} to ${mb(sendFile.size)})` : res.note ? ` (${mb(file.size)}, not shrunk: ${res.note})` : '';
         const mime = sendFile.type || 'video/mp4';
         patch(id, { status: 'uploading', pct: 0, fileName, sizeNote });
         const { url } = await driveApi<{ url: string }>('/api/drive/upload', { player_id: playerId, file_name: fileName, mime, size: sendFile.size });
