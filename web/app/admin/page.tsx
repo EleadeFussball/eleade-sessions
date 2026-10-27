@@ -15,6 +15,7 @@ import { PastInvoices } from '@/components/PastInvoices';
 import { DriveAdmin } from '@/components/DriveAdmin';
 import { CoachFollowUp } from '@/components/CoachFollowUp';
 import { FeedbackAdmin } from '@/components/FeedbackAdmin';
+import { AdminSummary, AdminTasksProvider, Fold, useAdminTask } from '@/components/AdminFold';
 
 type Expiring = { player_id: string; name: string; family: string | null; package_name: string | null; expires_on: string; days_left: number; sessions_left: number | null; analyses_left: number | null };
 type Missing = { player_id: string; name: string; main_coach_id: string | null; last_logged: string | null };
@@ -26,7 +27,13 @@ type ToConfirm = { kind: 'session' | 'package'; item_id: string; player_id: stri
 const METHOD: Record<string, string> = { stripe: 'Stripe link', bank: 'bank transfer', cash: 'cash', other: 'other' };
 
 export default function AdminPage() {
+  return <AdminTasksProvider><AdminInner /></AdminTasksProvider>;
+}
+
+function AdminInner() {
   const { isAdmin, coaches } = useAuth();
+  const [loaded, setLoaded] = useState(false);
+  const [settled, setSettled] = useState(false);
   const [lastWeek] = useState(addDays(weekStart(todayISO()), -7));
   const [low, setLow] = useState<PlayerBalance[]>([]);
   const [missing, setMissing] = useState<Missing[]>([]);
@@ -67,9 +74,32 @@ export default function AdminPage() {
     setMissing((m.data as Missing[]) ?? []); setLate((l.data as Late[]) ?? []);
     setPayg((g.data as Payg[]) ?? []); setPay((p.data as Pay[]) ?? []);
     const e = [b, m, l, g, p, c, inv].find((x) => x.error); if (e?.error) setErr(e.error.message);
+    setLoaded(true);
   }, [lastWeek]);
 
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
+
+  // Everything that needs action goes into the "To do" list at the top (the sections inside report their own counts).
+  useAdminTask('topay', 'fold-topay', 'Coach invoices to pay', toPay.length, 20);
+  useAdminTask('toconfirm', 'fold-toconfirm', 'Payments to confirm', toConfirm.length, 25);
+  useAdminTask('payg', 'fold-payg', 'Weekly payers still to pay', payg.length, 55);
+  useAdminTask('missing', 'fold-missing', 'Regular players with nothing logged last week', missing.length, 60);
+  useAdminTask('renewals', 'fold-renewals', 'Renewals: 2 or fewer sessions left', low.length, 65);
+  useAdminTask('expiring', 'fold-expiring', 'Packages expiring soon', expiring.length, 70);
+  useAdminTask('balances', 'fold-balances', 'Package balances to check', unconfirmed, 80);
+
+  // the sections report after loading; give them a moment before saying "all clear"
+  useEffect(() => { if (!loaded) return; const t = setTimeout(() => setSettled(true), 1500); return () => clearTimeout(t); }, [loaded]);
+  // coming back from Google sign-in or a link with #section: open that section
+  useEffect(() => {
+    if (!isAdmin) return;
+    const t = setTimeout(() => {
+      const h = window.location.hash.slice(1); if (!h) return;
+      const el = document.getElementById(h); const d = el?.closest('details');
+      if (el && d) { d.open = true; el.scrollIntoView(); }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [isAdmin]);
   if (!isAdmin) return <p className="empty">This page is for Jan.</p>;
 
   async function confirmItem(r: ToConfirm) {
@@ -118,145 +148,160 @@ export default function AdminPage() {
       <h1>Admin</h1>
       <p className="muted">Last week: {fmtWeek(lastWeek)}</p>
       {err && <div className="notice err">{err}</div>}
-      <InvoiceReminders />
 
-      <OwnerWeek />
+      <AdminSummary ready={loaded && settled} />
 
-      {unconfirmed > 0 && <div className="notice warn">{unconfirmed} package players still have a balance to check. Tick “confirmed” on each player page once sorted.</div>}
+      <Fold id="fold-myob" title="Invoices to send in MYOB" taskKey="myob"><InvoiceReminders /></Fold>
 
-      <h2>Coach invoices to pay ({toPay.length})</h2>
-      {toPay.length === 0 ? <p className="empty">No invoices waiting.</p> : (
-        <>
+      <Fold id="fold-topay" title="Coach invoices to pay" taskKey="topay">
+        {toPay.length === 0 ? <p className="empty">No invoices waiting.</p> : (
+          <>
+            <table className="t">
+              <thead><tr><th>Coach</th><th>Invoice</th><th className="n">Amount</th><th></th></tr></thead>
+              <tbody>{toPay.map((i) => (
+                <tr key={i.id}>
+                  <td>{i.coach_name}{!i.bsb && <><br /><span className="hint">Paid separately</span></>}</td>
+                  <td><Link href={`/invoices/${i.id}`}>{invoiceNo(i)}</Link><br /><span className="hint">Week {isoWeek(i.period_start)}, to {fmtDate(i.period_end)}</span></td>
+                  <td className="n">{money(i.total)}</td>
+                  <td className="n"><button className="btn small ghost" type="button" onClick={() => markInvoicesPaid([i.id])}>Mark paid</button></td>
+                </tr>
+              ))}</tbody>
+              <tfoot><tr><td>Total</td><td></td><td className="n">{money(toPayTotal)}</td><td></td></tr></tfoot>
+            </table>
+            {bankReady ? (
+              <div className="row">
+                <button className="btn small" type="button" onClick={downloadBankFile}>Download NAB payment file</button>
+                <button className="btn small ghost" type="button" onClick={() => markInvoicesPaid(toPay.map((i) => i.id))}>Mark all paid</button>
+              </div>
+            ) : (
+              <div className="notice warn">Add Eleade&apos;s paying account on the <Link href="/team">Team</Link> page to download a NAB payment file.</div>
+            )}
+            {toPay.some((i) => !i.bsb) && <p className="hint mt">Invoices marked “Paid separately” have no bank details, so they are left out of the NAB file. Mark them paid once you have paid them.</p>}
+            <p className="hint mt">In NAB Internet Banking on a computer, import the file as a multiple payment, check the total matches, and approve. Then tap Mark all paid.</p>
+          </>
+        )}
+      </Fold>
+
+      <Fold id="fold-toconfirm" title="Payments to confirm" taskKey="toconfirm">
+        <p className="hint">Assessments, packages and cash handed to you that the coaches recorded. Check Stripe, your bank account or the cash you collected, then confirm. Cash that coaches keep is taken off their weekly invoice instead.</p>
+        {toConfirm.length === 0 ? <p className="empty">Nothing to confirm.</p> : (
           <table className="t">
-            <thead><tr><th>Coach</th><th>Invoice</th><th className="n">Amount</th><th></th></tr></thead>
-            <tbody>{toPay.map((i) => (
-              <tr key={i.id}>
-                <td>{i.coach_name}{!i.bsb && <><br /><span className="hint">Paid separately</span></>}</td>
-                <td><Link href={`/invoices/${i.id}`}>{invoiceNo(i)}</Link><br /><span className="hint">Week {isoWeek(i.period_start)}, to {fmtDate(i.period_end)}</span></td>
-                <td className="n">{money(i.total)}</td>
-                <td className="n"><button className="btn small ghost" type="button" onClick={() => markInvoicesPaid([i.id])}>Mark paid</button></td>
+            <thead><tr><th>Player</th><th>What</th><th className="n">Amount</th><th></th></tr></thead>
+            <tbody>{toConfirm.map((r) => (
+              <tr key={r.kind + r.item_id}>
+                <td><Link href={`/players/${r.player_id}`}>{r.name}</Link><br /><span className="hint">{fmtDate(r.item_date)}{r.recorded_by ? `, by ${r.recorded_by}` : ''}</span></td>
+                <td>{r.what}<br /><span className="hint">{r.payment_method ? `Coach says: ${METHOD[r.payment_method] ?? r.payment_method}` : 'Not paid yet'}</span></td>
+                <td className="n">{money(r.amount)}</td>
+                <td className="n"><button className="btn small ghost" type="button" onClick={() => confirmItem(r)}>Confirm paid</button></td>
               </tr>
             ))}</tbody>
-            <tfoot><tr><td>Total</td><td></td><td className="n">{money(toPayTotal)}</td><td></td></tr></tfoot>
           </table>
-          {bankReady ? (
-            <div className="row">
-              <button className="btn small" type="button" onClick={downloadBankFile}>Download NAB payment file</button>
-              <button className="btn small ghost" type="button" onClick={() => markInvoicesPaid(toPay.map((i) => i.id))}>Mark all paid</button>
-            </div>
-          ) : (
-            <div className="notice warn">Add Eleade&apos;s paying account on the <Link href="/team">Team</Link> page to download a NAB payment file.</div>
-          )}
-          {toPay.some((i) => !i.bsb) && <p className="hint mt">Invoices marked “Paid separately” have no bank details, so they are left out of the NAB file. Mark them paid once you have paid them.</p>}
-          <p className="hint mt">In NAB Internet Banking on a computer, import the file as a multiple payment, check the total matches, and approve. Then tap Mark all paid.</p>
-        </>
-      )}
+        )}
+      </Fold>
 
-      <CoachFollowUp />
+      <Fold id="fold-stripe" title="Stripe payments" taskKey="stripe"><StripeInbox players={players} onChanged={load} /></Fold>
 
-      <FeedbackAdmin />
+      <Fold id="fold-feedback" title="Player feedback" taskKey="feedback"><FeedbackAdmin /></Fold>
 
-      <PastInvoices />
+      <Fold id="fold-ownerweek" title="Salary and Elle Academy" taskKey="ownerweek"><OwnerWeek /></Fold>
 
-      <DriveAdmin />
+      <Fold id="fold-followup" title="Coach follow-up" taskKey="followup"><CoachFollowUp /></Fold>
 
-      <StripeInbox players={players} onChanged={load} />
-
-      <h2>Payments to confirm ({toConfirm.length})</h2>
-      <p className="hint">Assessments, packages and cash handed to you that the coaches recorded. Check Stripe, your bank account or the cash you collected, then confirm. Cash that coaches keep is taken off their weekly invoice instead.</p>
-      {toConfirm.length === 0 ? <p className="empty">Nothing to confirm.</p> : (
-        <table className="t">
-          <thead><tr><th>Player</th><th>What</th><th className="n">Amount</th><th></th></tr></thead>
-          <tbody>{toConfirm.map((r) => (
-            <tr key={r.kind + r.item_id}>
-              <td><Link href={`/players/${r.player_id}`}>{r.name}</Link><br /><span className="hint">{fmtDate(r.item_date)}{r.recorded_by ? `, by ${r.recorded_by}` : ''}</span></td>
-              <td>{r.what}<br /><span className="hint">{r.payment_method ? `Coach says: ${METHOD[r.payment_method] ?? r.payment_method}` : 'Not paid yet'}</span></td>
-              <td className="n">{money(r.amount)}</td>
-              <td className="n"><button className="btn small ghost" type="button" onClick={() => confirmItem(r)}>Confirm paid</button></td>
-            </tr>
-          ))}</tbody>
-        </table>
-      )}
-
-      <h2>Renewals: 2 or fewer sessions left ({low.length})</h2>
-      {low.length === 0 ? <p className="empty">Nobody is running low.</p> : (
-        <table className="t">
-          <thead><tr><th>Player</th><th>Last session</th><th className="n">Left</th></tr></thead>
-          <tbody>
-            {low.map((p) => (
-              <tr key={p.player_id}>
-                <td><Link href={`/players/${p.player_id}`}>{p.family ? `${p.family} family` : p.name}</Link></td>
-                <td>{fmtDate(p.last_session)}</td>
-                <td className="n"><span className={`score ${Number(p.sessions_left) <= 0 ? 'out' : 'low'}`} style={{ fontSize: '1.4rem' }}>{num(p.sessions_left)}</span></td>
+      <Fold id="fold-payg" title="Weekly payers still to pay" taskKey="payg">
+        {payg.length === 0 ? <p className="empty">All weekly payers are paid up.</p> : (
+          <table className="t">
+            <thead><tr><th>Player</th><th>Week</th><th className="n">Owed</th><th></th></tr></thead>
+            <tbody>{payg.map((r) => (
+              <tr key={r.player_id + r.week_start}>
+                <td><Link href={`/players/${r.player_id}`}>{r.name}</Link><br /><span className="hint">{r.sessions} session{r.sessions > 1 ? 's' : ''}</span></td>
+                <td>{fmtDate(r.week_start)}<br /><span className="hint">Week {isoWeek(r.week_start)}</span></td>
+                <td className="n">{money(r.outstanding)}</td>
+                <td className="n"><button className="btn small ghost" type="button" onClick={() => markPaid(r)}>Mark paid</button></td>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            ))}</tbody>
+          </table>
+        )}
+      </Fold>
+
+      <Fold id="fold-missing" title="Regular players with nothing logged last week" taskKey="missing">
+        <p className="hint">These players trained every week for the three weeks before. Check with the coach whether a session happened.</p>
+        {missing.length === 0 ? <p className="empty">Every regular player has a session logged.</p> : (
+          <table className="t">
+            <thead><tr><th>Player</th><th>Main coach</th><th>Last logged</th></tr></thead>
+            <tbody>{missing.map((m) => (
+              <tr key={m.player_id}><td><Link href={`/players/${m.player_id}`}>{m.name}</Link></td><td>{coachName(m.main_coach_id)}</td><td>{fmtDate(m.last_logged)}</td></tr>
+            ))}</tbody>
+          </table>
+        )}
+      </Fold>
+
+      <Fold id="fold-renewals" title="Renewals: 2 or fewer sessions left" taskKey="renewals">
+        {low.length === 0 ? <p className="empty">Nobody is running low.</p> : (
+          <table className="t">
+            <thead><tr><th>Player</th><th>Last session</th><th className="n">Left</th></tr></thead>
+            <tbody>
+              {low.map((p) => (
+                <tr key={p.player_id}>
+                  <td><Link href={`/players/${p.player_id}`}>{p.family ? `${p.family} family` : p.name}</Link></td>
+                  <td>{fmtDate(p.last_session)}</td>
+                  <td className="n"><span className={`score ${Number(p.sessions_left) <= 0 ? 'out' : 'low'}`} style={{ fontSize: '1.4rem' }}>{num(p.sessions_left)}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Fold>
+
+      <Fold id="fold-expiring" title="Packages expiring soon" taskKey="expiring">
+        <p className="hint">Packages that expire within 4 weeks, or expired in the last 2, with credits still left.</p>
+        {expiring.length === 0 ? <p className="empty">No packages about to expire with credits left.</p> : (
+          <table className="t">
+            <thead><tr><th>Player</th><th>Expires</th><th className="n">Left</th></tr></thead>
+            <tbody>{expiring.map((e) => (
+              <tr key={e.player_id}>
+                <td><Link href={`/players/${e.player_id}`}>{e.family ? `${e.family} family` : e.name}</Link><br /><span className="hint">{e.package_name ?? 'Package'}</span></td>
+                <td>{fmtDate(e.expires_on)}<br /><span className={e.days_left < 0 ? 'tag red' : e.days_left <= 7 ? 'tag amber' : 'tag'}>{e.days_left < 0 ? `Expired ${-e.days_left} days ago` : e.days_left === 0 ? 'Today' : `In ${e.days_left} days`}</span></td>
+                <td className="n">{num(e.sessions_left)}{Number(e.analyses_left) > 0 ? ` + ${num(e.analyses_left)} analyses` : ''}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        )}
+      </Fold>
+
+      {unconfirmed > 0 && (
+        <Fold id="fold-balances" title="Package balances to check" taskKey="balances">
+          <div className="notice warn">{unconfirmed} package players still have a balance to check. Tick “confirmed” on each player page once sorted.</div>
+        </Fold>
       )}
 
-      <h2>Packages expiring soon ({expiring.length})</h2>
-      <p className="hint">Packages that expire within 4 weeks, or expired in the last 2, with credits still left.</p>
-      {expiring.length === 0 ? <p className="empty">No packages about to expire with credits left.</p> : (
-        <table className="t">
-          <thead><tr><th>Player</th><th>Expires</th><th className="n">Left</th></tr></thead>
-          <tbody>{expiring.map((e) => (
-            <tr key={e.player_id}>
-              <td><Link href={`/players/${e.player_id}`}>{e.family ? `${e.family} family` : e.name}</Link><br /><span className="hint">{e.package_name ?? 'Package'}</span></td>
-              <td>{fmtDate(e.expires_on)}<br /><span className={e.days_left < 0 ? 'tag red' : e.days_left <= 7 ? 'tag amber' : 'tag'}>{e.days_left < 0 ? `Expired ${-e.days_left} days ago` : e.days_left === 0 ? 'Today' : `In ${e.days_left} days`}</span></td>
-              <td className="n">{num(e.sessions_left)}{Number(e.analyses_left) > 0 ? ` + ${num(e.analyses_left)} analyses` : ''}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-      )}
+      <Fold id="fold-late" title={`Logged late (${late.length})`}>
+        {late.length === 0 ? <p className="empty">Everything was logged within 2 days.</p> : (
+          <table className="t">
+            <thead><tr><th>Coach</th><th>Session</th><th className="n">Days late</th></tr></thead>
+            <tbody>{late.map((l) => (
+              <tr key={l.session_id}><td>{l.coach_name}</td><td>{fmtDate(l.session_date, true)}</td><td className="n">{l.days_late}</td></tr>
+            ))}</tbody>
+          </table>
+        )}
+      </Fold>
 
-      <h2>Regular players with nothing logged last week ({missing.length})</h2>
-      <p className="hint">These players trained every week for the three weeks before. Check with the coach whether a session happened.</p>
-      {missing.length === 0 ? <p className="empty">Every regular player has a session logged.</p> : (
-        <table className="t">
-          <thead><tr><th>Player</th><th>Main coach</th><th>Last logged</th></tr></thead>
-          <tbody>{missing.map((m) => (
-            <tr key={m.player_id}><td><Link href={`/players/${m.player_id}`}>{m.name}</Link></td><td>{coachName(m.main_coach_id)}</td><td>{fmtDate(m.last_logged)}</td></tr>
-          ))}</tbody>
-        </table>
-      )}
+      <Fold id="fold-pay" title="Coach pay for last week">
+        {Object.keys(payByCoach).length === 0 ? <p className="empty">No sessions logged last week.</p> : (
+          <table className="t">
+            <tbody>{Object.entries(payByCoach).sort().map(([c, v]) => (
+              <tr key={c}><td>{c}</td><td className="n">{money(v)}</td></tr>
+            ))}</tbody>
+            <tfoot><tr><td>Total</td><td className="n">{money(payTotal)}</td></tr></tfoot>
+          </table>
+        )}
+        <p className="hint mt">Each coach&apos;s line matches what they see under Invoices, so their invoice can be paid without checking. Salaried staff are not listed.</p>
+      </Fold>
 
-      <h2>Logged late ({late.length})</h2>
-      {late.length === 0 ? <p className="empty">Everything was logged within 2 days.</p> : (
-        <table className="t">
-          <thead><tr><th>Coach</th><th>Session</th><th className="n">Days late</th></tr></thead>
-          <tbody>{late.map((l) => (
-            <tr key={l.session_id}><td>{l.coach_name}</td><td>{fmtDate(l.session_date, true)}</td><td className="n">{l.days_late}</td></tr>
-          ))}</tbody>
-        </table>
-      )}
+      <Fold id="fold-past" title="Previous coach invoices"><PastInvoices /></Fold>
 
-      <h2>Weekly payers still to pay ({payg.length})</h2>
-      {payg.length === 0 ? <p className="empty">All weekly payers are paid up.</p> : (
-        <table className="t">
-          <thead><tr><th>Player</th><th>Week</th><th className="n">Owed</th><th></th></tr></thead>
-          <tbody>{payg.map((r) => (
-            <tr key={r.player_id + r.week_start}>
-              <td><Link href={`/players/${r.player_id}`}>{r.name}</Link><br /><span className="hint">{r.sessions} session{r.sessions > 1 ? 's' : ''}</span></td>
-              <td>{fmtDate(r.week_start)}<br /><span className="hint">Week {isoWeek(r.week_start)}</span></td>
-              <td className="n">{money(r.outstanding)}</td>
-              <td className="n"><button className="btn small ghost" type="button" onClick={() => markPaid(r)}>Mark paid</button></td>
-            </tr>
-          ))}</tbody>
-        </table>
-      )}
+      <Fold id="fold-drive" title="Google Drive"><DriveAdmin /></Fold>
 
-      <h2>Coach pay for last week</h2>
-      {Object.keys(payByCoach).length === 0 ? <p className="empty">No sessions logged last week.</p> : (
-        <table className="t">
-          <tbody>{Object.entries(payByCoach).sort().map(([c, v]) => (
-            <tr key={c}><td>{c}</td><td className="n">{money(v)}</td></tr>
-          ))}</tbody>
-          <tfoot><tr><td>Total</td><td className="n">{money(payTotal)}</td></tr></tfoot>
-        </table>
-      )}
-      <p className="hint mt">Each coach&apos;s line matches what they see under Invoices, so their invoice can be paid without checking. Salaried staff are not listed.</p>
-
-      <BackupDownload />
+      <Fold id="fold-backup" title="Backup"><BackupDownload /></Fold>
     </>
   );
 }

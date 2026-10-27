@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase, errorText } from '@/lib/supabase';
 import { periodLabel } from '@/components/FeedbackDue';
+import { useAdminTask } from '@/components/AdminFold';
 
 type Row = { player_id: string; name: string; period_start: string; period_end: string; coach_name: string | null;
   parent_name: string | null; email: string | null; phone: string | null; feedback_id: string | null;
@@ -45,8 +46,9 @@ export function FeedbackAdmin() {
   const [period, setPeriod] = useState('');
   const cur = period || periods[0] || '';
   const list = rows.filter((r) => r.period_start === cur);
-  if (rows.length === 0) return null;
   const ready = list.filter((r) => r.status === 'ready');
+  useAdminTask('feedback', 'fold-feedback', 'Player feedback ready to send', ready.length, 35);
+  if (rows.length === 0) return null;
   const waiting = list.filter((r) => r.status === 'waiting');
   const sent = list.filter((r) => r.status === 'sent');
   const byCoach = waiting.reduce<Record<string, number>>((a, r) => { const k = r.coach_name ?? 'No coach'; a[k] = (a[k] ?? 0) + 1; return a; }, {});

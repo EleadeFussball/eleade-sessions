@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase, errorText } from '@/lib/supabase';
 import { addDays, fmtWeek, isoWeek, money, todayISO, weekStart } from '@/lib/dates';
+import { useAdminTask } from '@/components/AdminFold';
 
 export type OwnerWeekRow = {
   week_start: string; salary_cost: number; elle_hours: number; elle_rate: number; elle_amount: number;
@@ -30,10 +31,13 @@ export function OwnerWeek() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const [loaded, setLoaded] = useState(false);
   async function load() {
     const { data, error } = await supabase.from('owner_weeks').select('*').order('week_start', { ascending: false });
-    if (error) setErr(errorText(error)); else setRows((data as OwnerWeekRow[]) ?? []);
+    if (error) setErr(errorText(error)); else { setRows((data as OwnerWeekRow[]) ?? []); setLoaded(true); }
   }
+  const lastWeek = addDays(thisWeek, -7);
+  useAdminTask('ownerweek', 'fold-ownerweek', "Save last week's salary and Elle figures", loaded && !rows.some((r) => r.week_start === lastWeek) ? 1 : 0, 40);
   useEffect(() => { load(); }, []);
 
   // the week's own figures, or last week's as a starting point

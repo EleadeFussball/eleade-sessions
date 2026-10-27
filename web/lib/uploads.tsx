@@ -9,9 +9,12 @@ export type Upload = {
   pct: number; status: 'starting' | 'uploading' | 'done' | 'error'; error?: string; social?: boolean; socialNote?: string;
 };
 
+/** For a clip of a past session: the session's date (and start time) go into the file name instead of today's. */
+export type ClipWhen = { date: string; time?: string | null };
+
 type Ctx = {
   uploads: Upload[];
-  start: (file: File, playerId: string, playerName: string, coachName?: string, social?: boolean, part?: string) => void;
+  start: (file: File, playerId: string, playerName: string, coachName?: string, social?: boolean, part?: string, when?: ClipWhen) => void;
   dismiss: (id: string) => void;
 };
 const UploadCtx = createContext<Ctx>({ uploads: [], start: () => {}, dismiss: () => {} });
@@ -42,13 +45,15 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const start = useCallback((file: File, playerId: string, playerName: string, coachName?: string, social = false, part = '') => {
+  const start = useCallback((file: File, playerId: string, playerName: string, coachName?: string, social = false, part = '', when?: ClipWhen) => {
     const id = Math.random().toString(36).slice(2);
     const ext = (file.name.match(/\.[a-z0-9]{2,5}$/i)?.[0] ?? '.mp4').toLowerCase();
     const first = (coachName ?? '').split(' ')[0];
     const now = new Date();
     const hhmm = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
-    const fileName = `${todayISO()} ${hhmm} ${playerName}${first ? ` (${first})` : ''}${part ? ` ${part}` : ''}${ext}`;
+    // today's clips: date and time of upload; clips for a past session: the session's date (and its start time when known)
+    const stamp = when ? `${when.date}${when.time ? ` ${when.time.replace(':', '').slice(0, 4)}` : ''}` : `${todayISO()} ${hhmm}`;
+    const fileName = `${stamp} ${playerName}${first ? ` (${first})` : ''}${part ? ` ${part}` : ''}${ext}`;
     setUploads((u) => [...u, { id, playerId, playerName, fileName, pct: 0, status: 'starting', social }]);
     queue.current.push(async () => {
       try {

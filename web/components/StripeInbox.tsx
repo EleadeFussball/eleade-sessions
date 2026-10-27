@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase, errorText } from '@/lib/supabase';
 import { fmtDate, money } from '@/lib/dates';
+import { useAdminTask } from '@/components/AdminFold';
 import { FORMAT_LABEL, type Format } from '@/lib/types';
 import { PaymentRow, type StripePay } from '@/components/AssessmentPayment';
 
@@ -31,6 +32,7 @@ export function StripeInbox({ players, onChanged }: { players: PlayerOption[]; o
   const nobody = rows.filter((r) => !r.player_id);
   const waiting = rows.filter((r) => r.player_id && !r.applied_session_id);
   const used = rows.filter((r) => r.applied_session_id).slice(0, 8);
+  useAdminTask('stripe', 'fold-stripe', 'Stripe payments to sort', nobody.length + waiting.length, 30);
 
   // the name typed on the payment link, matched loosely to a player (all words found in the player's name)
   function guess(r: Row): string | undefined {

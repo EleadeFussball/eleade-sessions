@@ -385,3 +385,20 @@ pre.msg { white-space: pre-wrap; font: inherit; background: var(--turf-soft); pa
 .cliplist li { display: flex; flex-direction: column; gap: 6px; }
 .cliplist video { width: 100%; aspect-ratio: 9 / 16; max-height: 220px; object-fit: cover; border-radius: 8px; background: #000; }
 .bday { border-left: 4px solid #F2B705; background: color-mix(in srgb, #F2B705 10%, var(--paper)); }
+
+/* Admin: expandable topics and the "To do" summary */
+details.fold { border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); margin: 10px 0; }
+details.fold > summary { cursor: pointer; padding: 14px; min-height: 48px; font-weight: 600; display: flex; align-items: center; gap: 10px; list-style: none; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary > span:first-child { flex: 1; }
+details.fold > summary::after { content: '+'; font-size: 1.3rem; line-height: 1; color: var(--muted); }
+details.fold[open] > summary::after { content: '\2212'; }
+details.fold[open] > summary { border-bottom: 1px solid var(--line); }
+.fold-body { padding: 0 14px 14px; }
+.fold-body > :first-child { margin-top: 12px; }
+/* the topic title is already in the summary bar */
+.fold-body > h2:first-child, .fold-body > section > h2:first-child { display: none; }
+.admin-summary { margin: 12px 0 18px; border: 2px solid var(--ink); border-radius: var(--radius); background: var(--paper); padding: 4px 14px 8px; }
+.admin-summary .list { margin-top: 4px; }
+.linkbtn.todo { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; text-align: left; text-decoration: none; color: var(--ink); font-weight: 600; }
+.linkbtn.todo:hover span:first-child { text-decoration: underline; }

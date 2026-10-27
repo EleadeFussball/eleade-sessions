@@ -4,6 +4,7 @@ import { supabase, errorText } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { usePlayers } from '@/lib/usePlayers';
 import { PlayerPicker } from '@/components/PlayerPicker';
+import { ClipButton } from '@/components/ClipUpload';
 import { normaliseTime } from '@/lib/time';
 import { todayISO } from '@/lib/dates';
 import { FORMAT_LABEL, MAX_PLAYERS, OUTCOME_LABEL, PAYMENT_LABEL, placeField, FOCUS_LABEL, FOCUS_PLACEHOLDER, type Format, type Outcome, type PaymentMethod } from '@/lib/types';
@@ -56,6 +57,13 @@ export function EditSession({ sessionId, onDone, onCancel, onDelete }:
       setMethod(r.payment_method ?? '');
     });
   }, [sessionId]);
+
+  // Drive folders of the players on this session, for adding a clip after the session
+  const [folders, setFolders] = useState<{ id: string; name: string; drive_folder_id: string | null }[]>([]);
+  useEffect(() => {
+    if (ids.length === 0) { setFolders([]); return; }
+    supabase.from('players').select('id, name, drive_folder_id').in('id', ids).then(({ data }) => setFolders((data as typeof folders) ?? []));
+  }, [ids.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const max = MAX_PLAYERS[format];
   function pickFormat(f: Format) { setFormat(f); if (ids.length > MAX_PLAYERS[f]) setIds(ids.slice(0, MAX_PLAYERS[f])); }
@@ -142,6 +150,19 @@ export function EditSession({ sessionId, onDone, onCancel, onDelete }:
           <label className="field"><span>How it went</span><textarea value={obs} onChange={(e) => setObs(e.target.value)} /></label>
           <label className="field"><span>Next session</span><textarea value={improve} onChange={(e) => setImprove(e.target.value)} style={{ minHeight: 64 }} /></label>
         </>
+      )}
+      {format !== 'testing' && folders.length > 0 && (
+        <div className="field">
+          <span className="fieldlabel">Clip <span className="hint">(optional)</span></span>
+          <p className="hint">Add a training clip for this session. It uploads to the player&apos;s Drive folder, named with the session date, while you carry on.</p>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            {folders.map((f) => (
+              <ClipButton key={f.id} playerId={f.id} playerName={f.name} folderId={f.drive_folder_id}
+                          when={{ date, time: time.trim() ? normaliseTime(time) || null : null }}
+                          label={folders.length > 1 ? `Clip for ${f.name.split(' ')[0]}` : 'Upload clip'} />
+            ))}
+          </div>
+        </div>
       )}
       <p className="hint">Credits and coach pay update automatically. If the session was already on an invoice, the difference appears as a correction on the next one.</p>
       {err && <div className="notice err" role="alert">{err}</div>}

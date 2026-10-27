@@ -5,12 +5,13 @@ import { useAuth } from '@/lib/auth';
 import { driveApi, folderUrl } from '@/lib/drive';
 import { errorText } from '@/lib/supabase';
 import { fmtDate } from '@/lib/dates';
-import { CLIP_SAVED, useUploads } from '@/lib/uploads';
+import { CLIP_SAVED, useUploads, type ClipWhen } from '@/lib/uploads';
 
 type Clip = { id: string; file_name: string; created_at: string; coach_id: string | null; social?: boolean };
 
 /** The "Upload clip" button for one player: pick one or several videos, tick the ones for social media, upload. */
-export function ClipButton({ playerId, playerName, folderId, label }: { playerId: string; playerName: string; folderId: string | null; label?: string }) {
+export function ClipButton({ playerId, playerName, folderId, label, when }:
+  { playerId: string; playerName: string; folderId: string | null; label?: string; when?: ClipWhen }) {
   const { coach, isAdmin } = useAuth();
   const { uploads, start } = useUploads();
   const input = useRef<HTMLInputElement>(null);
@@ -23,7 +24,7 @@ export function ClipButton({ playerId, playerName, folderId, label }: { playerId
   }
   function uploadAll() {
     const n = picked.length;
-    picked.forEach((p, i) => start(p.file, playerId, playerName, coach?.name, p.social, n > 1 ? `${i + 1} of ${n}` : ''));
+    picked.forEach((p, i) => start(p.file, playerId, playerName, coach?.name, p.social, n > 1 ? `${i + 1} of ${n}` : '', when));
     setPicked([]);
   }
   return (

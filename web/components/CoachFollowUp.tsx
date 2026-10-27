@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { todayISO } from '@/lib/dates';
+import { useAdminTask } from '@/components/AdminFold';
 
 type Row = { id: string; name: string; docs: number; videos: number };
 
@@ -22,6 +23,7 @@ export function CoachFollowUp() {
         videos: ((v.data as { due_on: string }[]) ?? []).filter((x) => x.due_on <= today).length };
     })).then(setRows);
   }, [coaches]);
+  useAdminTask('followup', 'fold-followup', 'Coach follow-up: notes and videos overdue', rows.reduce((t, r) => t + r.docs + r.videos, 0), 50);
   if (rows.length === 0) return null;
   return (
     <section>

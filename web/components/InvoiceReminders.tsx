@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase, errorText } from '@/lib/supabase';
 import { fmtDate } from '@/lib/dates';
+import { useAdminTask } from '@/components/AdminFold';
 
 type Reminder = {
   key: string; kind: 'renewal' | 'monthly' | 'elle'; title: string; details: string; bill_to: string; item: string;
@@ -51,6 +52,7 @@ export function InvoiceReminders() {
   const open = rows.filter((r) => r.status === 'open');
   const waiting = rows.filter((r) => r.status === 'waiting');
   const done = rows.filter((r) => r.status === 'paid' || r.status === 'dismissed');
+  useAdminTask('myob', 'fold-myob', 'Invoices to send in MYOB', open.length, 10);
 
   return (
     <section>
