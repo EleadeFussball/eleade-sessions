@@ -68,6 +68,7 @@ export default function PlayersPage() {
           <button className="btn small" disabled={adding}>{adding ? 'Adding' : 'Add player'}</button>
         </form>
       </details>
+      <p className="hint"><Link href="/families">Family accounts</Link>: sessions done and paid for by all siblings together.</p>
       <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search players" aria-label="Search players" />
       <div className="seg mt" role="group" aria-label="Filter">
         {([['all', 'All'], ['mine', 'My players'], ['low', '2 or fewer left'], ['monthly', 'Monthly'], ['weekly', 'Pays weekly'], ['casual', 'Casual']] as [Filter, string][]).map(([k, l]) => (

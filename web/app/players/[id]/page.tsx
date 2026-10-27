@@ -131,7 +131,7 @@ export default function PlayerPage() {
       )}
       <p className="muted">
         {coachName(p.main_coach_id) ? `Main coach ${coachName(p.main_coach_id)}` : 'No main coach'}
-        {p.family ? `. Shares credits with the ${p.family} family.` : ''}
+        {p.family ? <>. Shares credits with the {p.family} family (<Link href="/families">see family account</Link>).</> : ''}
         {!p.active ? ' Not currently training.' : ''}
       </p>
       <PlayerDetails key={`${p.id}${p.dob}${p.club}${p.parent_name}${p.email}`} p={p} onSaved={load} />
