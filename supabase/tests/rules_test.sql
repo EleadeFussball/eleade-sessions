@@ -1442,6 +1442,30 @@ do $$ begin
   end;
 end $$;
 
+-- ---------- stopping a regular session ----------
+select set_config('t.stp','',false);
+select public.create_plan('00000000-0000-0000-0000-0000000000c2', '1:1', extract(isodow from public.today_sydney() + 2)::int,
+  '10:00', array['00000000-0000-0000-0000-0000000000bb']::uuid[], 'Moore Park', public.today_sydney() - 14) as stp \gset
+select set_config('t.stp', :'stp', false);
+select pg_temp.check('before stopping a regular session has future sessions',
+  (select count(*) from public.plan_occurrences(public.today_sydney() + 1, public.today_sydney() + 30) where plan_id = :'stp') > 0);
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a3';
+do $$ begin
+  begin
+    perform public.stop_plan(current_setting('t.stp')::uuid);
+    perform pg_temp.check('another coach cannot stop someone else''s regular session (stop_plan)', false);
+  exception when others then perform pg_temp.check('another coach cannot stop someone else''s regular session (stop_plan)', true);
+  end;
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.stop_plan(:'stp');
+select pg_temp.check('stopping removes every upcoming session of the plan',
+  (select count(*) from public.plan_occurrences(public.today_sydney(), public.today_sydney() + 60) where plan_id = :'stp') = 0);
+select pg_temp.check('stopping ends the plan yesterday, so it leaves the list',
+  (select ends_on = public.today_sydney() - 1 from public.session_plans where id = :'stp'));
+select pg_temp.check('stopping keeps the past sessions',
+  (select count(*) from public.plan_occurrences(public.today_sydney() - 14, public.today_sydney() - 1) where plan_id = :'stp') > 0);
+
 -- ---------- casual players are never package credit ----------
 reset role;
 insert into public.players (id, name, main_coach_id, payment_plan, casual_method) values

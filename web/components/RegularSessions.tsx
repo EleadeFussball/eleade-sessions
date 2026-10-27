@@ -49,7 +49,7 @@ export function RegularSessions({ playerId }: { playerId: string }) {
   useEffect(() => { if (coach && !coachId) setCoachId(coach.id); }, [coach, coachId]);
 
   const today = todayISO();
-  const current = plans.filter((p) => !p.ends_on || p.ends_on >= today);
+  const current = plans.filter((p) => !p.ends_on || p.ends_on > today);
   const coachName = (id: string) => coaches.find((c) => c.id === id)?.name ?? '';
   const canManage = (p: Plan) => isAdmin || p.coach_id === coach?.id;
 
@@ -96,8 +96,8 @@ export function RegularSessions({ playerId }: { playerId: string }) {
   }
 
   async function stop(p: Plan) {
-    if (!window.confirm(`Stop the regular ${DAYS[p.weekday - 1]} session? Past sessions stay in the history.`)) return;
-    const { error } = await supabase.from('session_plans').update({ ends_on: today }).eq('id', p.id);
+    if (!window.confirm(`Stop the regular ${DAYS[p.weekday - 1]} session?\n\nAll upcoming sessions are removed from the calendar and the week view. Past sessions stay in the history.`)) return;
+    const { error } = await supabase.rpc('stop_plan', { p_plan_id: p.id });
     if (error) setErr(errorText(error)); else load();
   }
 
