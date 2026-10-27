@@ -1340,6 +1340,7 @@ select pg_temp.check('a player from the website form gets the parent, date of bi
      from public.players where id = :'dplayer'));
 reset role;
 update public.settings set value = to_jsonb(to_char(date_trunc('month', public.today_sydney()) - interval '3 months', 'YYYY-MM-DD')) where key = 'feedback_from';
+delete from public.settings where key = 'feedback_not_before';
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
 select pg_temp.check('feedback periods are two months long and due from the 25th of the second month',
