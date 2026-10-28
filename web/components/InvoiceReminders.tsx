@@ -92,7 +92,7 @@ export function InvoiceReminders() {
             <li key={r.key} className="session">
               <div className="head"><span>{r.title}</span><span className="tag amber">Waiting</span></div>
               <div className="sub">{r.kind !== 'elle' ? `${r.package_name ?? 'Package'}: ${contents(r)} · ` : ''}{aud(r.total)} inc GST · sent {fmtDate(r.done_at!.slice(0, 10))}</div>
-              {r.ledger_id && <p className="hint">The credits are already on the player. They show as payment awaiting until you confirm it.</p>}
+              {r.ledger_id && <p className="hint">The credits are already on the player. They show as payment awaiting until you confirm it. To change the sessions or price, or delete the package, open the player and tap Edit or delete package.</p>}
               <div className="row mt" style={{ flexWrap: 'wrap' }}>
                 <span className="hint" style={{ alignSelf: 'center' }}>Paid by:</span>
                 {METHODS.map(([m, label]) => (

@@ -192,7 +192,8 @@ function AdminInner() {
                 <td><Link href={`/players/${r.player_id}`}>{r.name}</Link><br /><span className="hint">{fmtDate(r.item_date)}{r.recorded_by ? `, by ${r.recorded_by}` : ''}</span></td>
                 <td>{r.what}<br /><span className="hint">{r.payment_method ? `Coach says: ${METHOD[r.payment_method] ?? r.payment_method}` : 'Not paid yet'}</span></td>
                 <td className="n">{money(r.amount)}</td>
-                <td className="n"><button className="btn small ghost" type="button" onClick={() => confirmItem(r)}>Confirm paid</button></td>
+                <td className="n"><button className="btn small ghost" type="button" onClick={() => confirmItem(r)}>Confirm paid</button>
+                  {r.kind === 'package' && <><br /><Link className="linkbtn" href={`/players/${r.player_id}`}>Edit or delete</Link></>}</td>
               </tr>
             ))}</tbody>
           </table>

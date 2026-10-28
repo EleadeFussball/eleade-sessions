@@ -1503,6 +1503,21 @@ update public.credit_ledger set payment_status = 'confirmed' where player_id = '
 select pg_temp.check('confirming under payments to confirm also marks the MYOB reminder paid',
   (select status = 'paid' from public.invoice_reminders() where key = :'dkey'));
 
+-- ---------- editing or deleting a sent package keeps the MYOB reminder in step ----------
+insert into public.players (id, name, billing_model) values ('00000000-0000-0000-0000-0000000e0d02', 'Edit Ed', 'package');
+insert into public.credit_ledger (player_id, kind, sessions_delta, package_name, amount_paid, reason, effective_date)
+values ('00000000-0000-0000-0000-0000000e0d02', 'purchase', 5, '5 pack', 650, 'Bought 5 pack', public.today_sydney() - 40),
+       ('00000000-0000-0000-0000-0000000e0d02', 'correction', -9, null, null, 'used', public.today_sydney() - 5);
+update public.credit_ledger set payment_status = 'confirmed' where player_id = '00000000-0000-0000-0000-0000000e0d02';
+select key as edkey from public.invoice_reminders() where bill_to = 'Edit Ed' and status = 'open' \gset
+select public.send_reminder(:'edkey');
+update public.credit_ledger set sessions_delta = 6, amount_paid = 700 where player_id = '00000000-0000-0000-0000-0000000e0d02' and payment_status = 'awaiting' and kind = 'purchase';
+select pg_temp.check('editing a sent package changes the sent invoice line',
+  (select sessions = 6 and amount_ex = 700 and status = 'waiting' from public.invoice_reminders() where key = :'edkey'));
+delete from public.credit_ledger where player_id = '00000000-0000-0000-0000-0000000e0d02' and payment_status = 'awaiting' and kind = 'purchase';
+select pg_temp.check('deleting a sent package takes it off the waiting list',
+  not exists (select 1 from public.invoice_reminders_done where key = :'edkey'));
+
 -- ---------- casual players are never package credit ----------
 reset role;
 insert into public.players (id, name, main_coach_id, payment_plan, casual_method) values

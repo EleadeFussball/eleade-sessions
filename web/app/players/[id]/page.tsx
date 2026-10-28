@@ -226,7 +226,9 @@ export default function PlayerPage() {
                 <td>
                   {KIND_LABEL[l.kind] ?? l.kind}{l.package_name ? `, ${l.package_name}` : ''}{l.amount_paid ? `, ${money(l.amount_paid)}` : ''}
                   <br /><span className="hint">{l.reason}{l.payment_method ? `, paid by ${PAYMENT_LABEL[l.payment_method].toLowerCase()}` : ''}{l.edited_at ? `, changed ${fmtDate(l.edited_at.slice(0, 10))}` : ''}</span>
-                  {isAdmin && <button type="button" className="linkbtn" style={{ marginLeft: 8 }} onClick={() => setEditingLedger(l.id)}>Edit</button>}
+                  {isAdmin && (l.kind === 'purchase'
+                    ? <div style={{ marginTop: 6 }}><button type="button" className="btn small ghost" onClick={() => setEditingLedger(l.id)}>Edit or delete package</button></div>
+                    : <button type="button" className="linkbtn" style={{ marginLeft: 8 }} onClick={() => setEditingLedger(l.id)}>Edit</button>)}
                   {l.kind === 'purchase' && (
                     <div style={{ marginTop: 4 }}>
                       {l.payment_status === 'awaiting'
@@ -289,7 +291,7 @@ function LedgerEdit({ l, onSaved, onCancel }: { l: Ledger; onSaved: () => void; 
   }
 
   async function remove() {
-    if (!window.confirm('Remove this entry? The balance is recalculated straight away.')) return;
+    if (!window.confirm(l.kind === 'purchase' ? 'Delete this package? The balance is recalculated straight away and it is taken off the MYOB list.' : 'Remove this entry? The balance is recalculated straight away.')) return;
     setBusy(true);
     const { error } = await supabase.from('credit_ledger').delete().eq('id', l.id);
     setBusy(false);
@@ -326,7 +328,7 @@ function LedgerEdit({ l, onSaved, onCancel }: { l: Ledger; onSaved: () => void; 
       <div className="row mt" style={{ flexWrap: 'wrap' }}>
         <button className="btn small" disabled={busy}>{busy ? 'Saving' : 'Save changes'}</button>
         <button type="button" className="btn small ghost" onClick={onCancel}>Cancel</button>
-        <button type="button" className="btn small ghost" style={{ color: 'var(--red)' }} disabled={busy} onClick={remove}>Remove entry</button>
+        <button type="button" className="btn small ghost" style={{ color: 'var(--red)' }} disabled={busy} onClick={remove}>{l.kind === 'purchase' ? 'Delete package' : 'Remove entry'}</button>
       </div>
       <p className="hint">Credits and balances update straight away. Use a minus for credits taken off.</p>
     </form>
