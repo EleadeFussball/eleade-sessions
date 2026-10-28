@@ -1006,6 +1006,7 @@ values (date_trunc('week', public.today_sydney() - 7)::date, 1960, 7.5, 70, 525,
 on conflict (week_start) do update set elle_hours = 7.5, elle_amount = 525, tyler_elle_sessions = 3, tyler_commission = 60;
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+update public.credit_ledger set payment_status = 'confirmed' where player_id in ('00000000-0000-0000-0000-0000000e00c1', '00000000-0000-0000-0000-0000000e00c2');
 select pg_temp.check('a package with one credit left asks for a renewal invoice at the new price plus GST',
   (select amount_ex = 650 and gst = 65 and total = 715 and item = 'eleade 5 pack' from public.invoice_reminders() where bill_to = 'Renew Rita'));
 select pg_temp.check('a recurring monthly package asks for next month''s invoice',
@@ -1482,6 +1483,25 @@ reset role;
 delete from public.settings where key = 'feedback_not_before';
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+
+-- ---------- sending a MYOB reminder never adds a package twice ----------
+reset role;
+insert into public.players (id, name, billing_model) values ('00000000-0000-0000-0000-0000000e0d01', 'Dup Dora', 'package');
+insert into public.credit_ledger (player_id, kind, sessions_delta, package_name, amount_paid, reason, effective_date)
+values ('00000000-0000-0000-0000-0000000e0d01', 'purchase', 5, '5 pack', 650, 'Bought 5 pack', public.today_sydney() - 40),
+       ('00000000-0000-0000-0000-0000000e0d01', 'correction', -9, null, null, 'used', public.today_sydney() - 5);
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+update public.credit_ledger set payment_status = 'confirmed' where player_id = '00000000-0000-0000-0000-0000000e0d01';
+select key as dkey from public.invoice_reminders() where bill_to = 'Dup Dora' and status = 'open' \gset
+select public.send_reminder(:'dkey');
+select pg_temp.check('after sending, the same player gets no second renewal reminder while the package is unpaid',
+  (select count(*) = 0 from public.invoice_reminders() where bill_to = 'Dup Dora' and status = 'open'));
+select pg_temp.check('the sent package waits for payment and is listed under payments to confirm',
+  (select count(*) = 1 from public.payments_to_confirm where name = 'Dup Dora' and kind = 'package'));
+update public.credit_ledger set payment_status = 'confirmed' where player_id = '00000000-0000-0000-0000-0000000e0d01' and payment_status = 'awaiting';
+select pg_temp.check('confirming under payments to confirm also marks the MYOB reminder paid',
+  (select status = 'paid' from public.invoice_reminders() where key = :'dkey'));
 
 -- ---------- casual players are never package credit ----------
 reset role;
