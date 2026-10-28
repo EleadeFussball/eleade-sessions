@@ -101,7 +101,7 @@ export function Shell({ children }: { children: ReactNode }) {
     ]).then(([d, v, f]) => {
       const today = todayISO();
       if (alive) setTodo(((d.data as unknown[]) ?? []).length + ((v.data as { due_on: string }[]) ?? []).filter((x) => x.due_on <= today).length
-        + ((f.data as unknown[]) ?? []).length);
+        + ((f.data as { due_on?: string }[]) ?? []).filter((x) => !x.due_on || x.due_on <= today).length);
     });
     count();
     window.addEventListener('eleade:docs-changed', count);

@@ -1466,6 +1466,23 @@ select pg_temp.check('stopping ends the plan yesterday, so it leaves the list',
 select pg_temp.check('stopping keeps the past sessions',
   (select count(*) from public.plan_occurrences(public.today_sydney() - 14, public.today_sydney() - 1) where plan_id = :'stp') > 0);
 
+-- ---------- postponed reviews stay open and keep what coaches typed ----------
+reset role;
+insert into public.settings (key, value) values ('feedback_not_before', to_jsonb((public.today_sydney() + 30)::text)) on conflict (key) do update set value = excluded.value;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select pg_temp.check('postponed reviews can still be written (forms stay open)',
+  exists (select 1 from public.feedback_due('00000000-0000-0000-0000-0000000000c2')));
+select pg_temp.check('postponed reviews show the later due date',
+  (select bool_and(due_on > public.today_sydney()) from public.feedback_due('00000000-0000-0000-0000-0000000000c2')));
+select public.save_feedback('00000000-0000-0000-0000-0000000fee02', (select min(period_start) from public.feedback_periods()), '• Draft point', null, null);
+select pg_temp.check('a saved but unsent review comes back as a draft with its text',
+  exists (select 1 from public.feedback_drafts('00000000-0000-0000-0000-0000000000c2') where player_id = '00000000-0000-0000-0000-0000000fee02' and progress like '%Draft point%'));
+reset role;
+delete from public.settings where key = 'feedback_not_before';
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+
 -- ---------- casual players are never package credit ----------
 reset role;
 insert into public.players (id, name, main_coach_id, payment_plan, casual_method) values
