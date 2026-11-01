@@ -43,7 +43,7 @@ export default function StatsPage() {
   const { isAdmin } = useAuth();
   const thisWeek = weekStart(todayISO());
   const yearStart = weekStart(`${todayISO().slice(0, 4)}-01-04`); // Monday of week 1
-  const [from, setFrom] = useState(addDays(thisWeek, -7 * 11));
+  const [from, setFrom] = useState(thisWeek);
   const [toWeek, setToWeek] = useState(thisWeek);
   const [rows, setRows] = useState<Row[]>([]);
   const [docAnalyses, setDocAnalyses] = useState<{ week_start: string }[]>([]);
@@ -258,7 +258,7 @@ export default function StatsPage() {
             <div className="tile tile-key"><div className="tile-label">Business result</div><div className="tile-value">{money(totals.result)}</div></div>
             <div className="tile"><div className="tile-label">Business result per week</div><div className="tile-value">{money(totals.result / nWeeks)}</div></div>
           </div>
-          <h2>Sessions per coach</h2>
+          <h2>Sessions per coach, {nWeeks === 1 ? `week ${isoWeek(from)}` : `weeks ${isoWeek(from)} to ${isoWeek(toWeek)}`}</h2>
           {sessionsByCoach.length === 0 ? <p className="empty">No sessions in this period.</p> : (
             <div className="tiles">
               {sessionsByCoach.map(([c, e]) => (
