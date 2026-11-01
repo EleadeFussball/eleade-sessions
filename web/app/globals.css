@@ -402,3 +402,14 @@ details.fold[open] > summary { border-bottom: 1px solid var(--line); }
 .admin-summary .list { margin-top: 4px; }
 .linkbtn.todo { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; text-align: left; text-decoration: none; color: var(--ink); font-weight: 600; }
 .linkbtn.todo:hover span:first-child { text-decoration: underline; }
+
+/* sessions per week with a number scale */
+.scale-chart { display: flex; gap: 8px; height: 190px; padding-top: 18px; }
+.scale-axis { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; font-size: .75rem; color: var(--muted, #667); min-width: 28px; transform: translateY(-6px); height: calc(100% + 6px); }
+.scale-plot { position: relative; flex: 1; display: flex; align-items: flex-end; gap: 10px; border-bottom: 1px solid var(--line); }
+.scale-line { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--line); opacity: .7; pointer-events: none; }
+.scale-col { position: relative; z-index: 1; flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; min-width: 0; }
+.scale-col .bar { max-width: 56px; }
+.scale-col:hover .bar { background: var(--brand-red); }
+.scale-labels { display: flex; gap: 10px; margin-left: 36px; text-align: center; font-size: .8rem; }
+.scale-labels > span { flex: 1; min-width: 0; }

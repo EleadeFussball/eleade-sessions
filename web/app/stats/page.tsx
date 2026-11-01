@@ -54,6 +54,8 @@ export default function StatsPage() {
   const [po, setPo] = useState<PlayerOutcome[]>([]);
   const [owner, setOwner] = useState<Owner[]>([]);
   const [loading, setLoading] = useState(true);
+  const [recentRows, setRecentRows] = useState<Row[]>([]);
+  const [recentHistory, setRecentHistory] = useState<History[]>([]);
 
   const to = addDays(toWeek, 6);
   const nWeeks = Math.max(1, Math.round((Date.parse(toWeek) - Date.parse(from)) / (7 * 86400000)) + 1);
@@ -91,6 +93,17 @@ export default function StatsPage() {
       setLoading(false);
     });
   }, [isAdmin, from, to, toWeek]);
+
+  // the five weeks before this one, whatever period is selected above
+  const recentFrom = addDays(thisWeek, -35), recentTo = addDays(thisWeek, -1);
+  useEffect(() => {
+    if (!isAdmin) return;
+    Promise.all([
+      fetchAll<Row>((a, b) => supabase.from('stats_sessions').select('*').eq('imported', false)
+        .gte('session_date', recentFrom).lte('session_date', recentTo).order('session_date').range(a, b)),
+      fetchAll<History>((a, b) => supabase.from('stats_history').select('*').gte('week_start', recentFrom).lte('week_start', addDays(thisWeek, -7)).range(a, b)),
+    ]).then(([r, h]) => { setRecentRows(r); setRecentHistory(h); });
+  }, [isAdmin, recentFrom, recentTo, thisWeek]);
 
   const weekList = useMemo(() => Array.from({ length: nWeeks }, (_, i) => addDays(from, 7 * i)), [from, nWeeks]);
   const fromHistory = (w: string) => !!historyUntil && w <= historyUntil;
@@ -140,6 +153,15 @@ export default function StatsPage() {
     }
     return [...m.entries()].filter(([, e]) => e.n > 0 || e.pay > 0).sort((a, b) => b[1].n - a[1].n);
   }, [history, appRows, historyUntil]); // eslint-disable-line react-hooks/exhaustive-deps
+  const recentWeeks = useMemo(() => Array.from({ length: 5 }, (_, i) => addDays(thisWeek, -7 * (5 - i))).map((w) => {
+    const n = fromHistory(w)
+      ? recentHistory.filter((x) => x.week_start === w).reduce((t, x) => t + Number(x.sessions), 0)
+      : recentRows.filter((x) => x.week_start === w && x.outcome === 'attended' && x.format !== 'analysis').length;
+    return { week: w, n };
+  }), [recentRows, recentHistory, historyUntil, thisWeek]); // eslint-disable-line react-hooks/exhaustive-deps
+  const recentMax = Math.max(...recentWeeks.map((w) => w.n), 1);
+  const scaleTop = Math.max(10, Math.ceil(recentMax / 10) * 10);
+  const scaleTicks = [scaleTop, scaleTop * 0.75, scaleTop / 2, scaleTop * 0.25, 0];
   const historyAnalyses = perWeek.filter((w) => w.history).reduce((t, w) => t + w.analyses, 0);
 
   const totals = useMemo(() => ({
@@ -236,6 +258,32 @@ export default function StatsPage() {
             <div className="tile tile-key"><div className="tile-label">Business result</div><div className="tile-value">{money(totals.result)}</div></div>
             <div className="tile"><div className="tile-label">Business result per week</div><div className="tile-value">{money(totals.result / nWeeks)}</div></div>
           </div>
+          <h2>Sessions per coach</h2>
+          {sessionsByCoach.length === 0 ? <p className="empty">No sessions in this period.</p> : (
+            <div className="tiles">
+              {sessionsByCoach.map(([c, e]) => (
+                <div className="tile" key={c}><div className="tile-label">{c}</div><div className="tile-value">{n1(e.n)}</div><div className="hint">{pct(e.n, totals.sessions)} of {n1(totals.sessions)}</div></div>
+              ))}
+            </div>
+          )}
+          <p className="hint">Sessions delivered by each coach in the period above (attended, game analyses not included). Only sessions that are logged count, not those still waiting to be logged.</p>
+
+          <h2>Sessions per week, last 5 weeks</h2>
+          <div className="scale-chart" role="img" aria-label="Sessions delivered in each of the last five weeks">
+            <div className="scale-axis" aria-hidden="true">{scaleTicks.map((t) => <span key={t}>{n1(t)}</span>)}</div>
+            <div className="scale-plot">
+              {scaleTicks.map((t) => <div key={t} className="scale-line" style={{ bottom: `${(t / scaleTop) * 100}%` }} />)}
+              {recentWeeks.map((w) => (
+                <div key={w.week} className="scale-col" title={`Week ${isoWeek(w.week)} (${fmtDate(w.week)}): ${n1(w.n)} sessions`}>
+                  <span className="bar-n">{n1(w.n)}</span>
+                  <div className="bar" style={{ height: `${(w.n / scaleTop) * 100}%` }} />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="scale-labels">{recentWeeks.map((w) => <span key={w.week}>W{isoWeek(w.week)}<br /><span className="hint">{fmtDate(w.week).replace(/ \d{4}$/, '')}</span></span>)}</div>
+          <p className="hint">The five weeks before this one, whatever period is selected. Total sessions of all coaches.</p>
+
           <p className="hint">Business result = earned after coach pay + Elle Academy + Tyler&apos;s Elle commission − your salary and super. Salary counts from week 41 at $1,960 a week ($3,500 gross a fortnight plus $420 super); Elle and commission come from &quot;Salary and Elle Academy&quot; on the Admin page.</p>
           {totals.missing > 0 && <div className="notice warn">{totals.missing} week{totals.missing === 1 ? '' : 's'} in this period {totals.missing === 1 ? 'has' : 'have'} no Elle figures yet. <Link href="/admin">Fill them in on the Admin page</Link>.</div>}
           {totals.historyWeeks > 0 && <p className="hint">Up to week {isoWeek(historyUntil)}, session counts come from the Abrechnung (the weekly session totals per coach), and game analyses from the Abrechnung or the documentation file, whichever has more. From week {isoWeek(addDays(historyUntil, 7))}, they come from sessions logged in the app. Cancellations only cover sessions logged in the app.</p>}
