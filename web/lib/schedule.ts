@@ -3,7 +3,7 @@ import type { Format, Outcome } from '@/lib/types';
 
 /** One planned session: a weekly regular one, or a one-off booking. */
 export type ScheduleEntry = {
-  kind: 'regular' | 'once' | 'logged';
+  kind: 'regular' | 'once' | 'logged' | 'meeting';
   ref_id: string;
   plan_date: string | null;
   session_date: string;
@@ -20,6 +20,13 @@ export type ScheduleEntry = {
   outcome: Outcome | null;
   /** the coach's plan for the session, written before it happens */
   prep?: string | null;
+  /** set on coach meetings only */
+  meeting?: Meeting;
+};
+
+export type Meeting = {
+  id: string; title: string; mode: 'online' | 'in_person'; link: string | null; location: string | null; note: string | null;
+  coach_ids: string[];
 };
 
 export const hhmm = (t: string | null) => (t ? t.slice(0, 5) : '');
@@ -32,6 +39,23 @@ export function timeRange(t: string | null, minutes: number): string {
   return `${hhmm(t)} – ${String(Math.floor(end / 60) % 24).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
 }
 export const entryKey = (o: ScheduleEntry) => `${o.kind}-${o.ref_id}-${o.plan_date ?? o.session_date}`;
+
+/** Coach meetings in a date range, one entry per invited coach so each coach's calendar shows them. RLS shows a coach only their own. */
+export async function loadMeetings(from: string, to: string): Promise<ScheduleEntry[]> {
+  const { data } = await supabase.from('meetings')
+    .select('id, title, meeting_date, start_time, minutes, mode, location, link, note, meeting_coaches(coach_id)')
+    .gte('meeting_date', from).lte('meeting_date', to).order('meeting_date').order('start_time');
+  type Row = { id: string; title: string; meeting_date: string; start_time: string; minutes: number; mode: 'online' | 'in_person';
+    location: string | null; link: string | null; note: string | null; meeting_coaches: { coach_id: string }[] };
+  return ((data as Row[] | null) ?? []).flatMap((m) => {
+    const meeting: Meeting = { id: m.id, title: m.title, mode: m.mode, link: m.link, location: m.location, note: m.note, coach_ids: m.meeting_coaches.map((c) => c.coach_id) };
+    return meeting.coach_ids.map((cid): ScheduleEntry => ({
+      kind: 'meeting', ref_id: m.id, plan_date: null, session_date: m.meeting_date, start_time: m.start_time, minutes: m.minutes,
+      coach_id: cid, format: '1:1', location: m.mode === 'in_person' ? m.location : 'Online (Zoom)', note: m.note,
+      player_ids: null, players: m.title, moved: false, session_id: null, outcome: null, meeting,
+    }));
+  });
+}
 
 export async function loadSchedule(from: string, to: string): Promise<ScheduleEntry[]> {
   const { data } = await supabase.rpc('calendar', { p_from: from, p_to: to });
@@ -114,7 +138,7 @@ export function completeFrom(o: Pick<ScheduleEntry, 'start_time' | 'minutes'>): 
 
 /** A planned session can be marked completed once it is over (Jan any time on or after the day). */
 export function canComplete(o: ScheduleEntry, isAdmin: boolean): boolean {
-  if (o.session_id || o.kind === 'logged') return false;
+  if (o.session_id || o.kind === 'logged' || o.kind === 'meeting') return false;
   const now = sydneyNow();
   if (o.session_date > now.date) return false;
   if (isAdmin || !o.start_time || o.session_date < now.date) return true;

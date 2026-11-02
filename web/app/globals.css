@@ -413,3 +413,11 @@ details.fold[open] > summary { border-bottom: 1px solid var(--line); }
 .scale-col:hover .bar { background: var(--brand-red); }
 .scale-labels { display: flex; gap: 10px; margin-left: 36px; text-align: center; font-size: .8rem; }
 .scale-labels > span { flex: 1; min-width: 0; }
+
+/* coach meetings: black with a white outline */
+.ev.ev-meeting, .ev.ev-meeting.done { --cc: #000; background: #000; color: #fff; border-left: 0; border: 2px solid #fff; box-shadow: 0 0 0 1px #000; }
+.ev.ev-meeting .ev-sub { color: rgba(255,255,255,.75); }
+.ev.ev-meeting.on { outline: 2px solid var(--brand-red); outline-offset: 1px; }
+.meet-dot { background: #000 !important; border: 2px solid #fff; box-shadow: 0 0 0 1px #000; }
+.meet-card { background: #000; color: #fff; border: 2px solid #fff; box-shadow: 0 0 0 1px #000; border-radius: 10px; padding: 12px 14px; }
+.meet-card a { color: #fff; text-decoration: underline; word-break: break-all; }

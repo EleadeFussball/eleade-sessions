@@ -114,9 +114,10 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
 
   return (
     <div className="grid-wrap">
-      {shownCoaches.length > 1 && (
+      {(shownCoaches.length > 1 || entries.some((o) => o.kind === 'meeting')) && (
         <div className="cal-legend">
           {shownCoaches.map((c) => <span key={c.id}><i style={{ background: coachColour(c.name) }} />{c.name}</span>)}
+          <span><i className="meet-dot" />Coach meeting</span>
           <span className="cal-legend-done">✓ logged · ✕ cancelled · &quot;Log it&quot; = over, still to log</span>
         </div>
       )}
@@ -183,7 +184,7 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
                     }}
                     onClick={() => { if (!tapBlock.current) onPickEntry(o); }}
                     onPointerDown={(e) => {
-                      if (done || !mine) return;
+                      if (done || !mine || o.kind === 'meeting') return;
                       const touch = e.pointerType !== 'mouse';
                       const col0 = (e.currentTarget.parentElement as HTMLElement);
                       const grab = timeAt(e, col0) - minutesOf(o.start_time)!;
@@ -239,7 +240,7 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
                     }}
                   >
                     <span className="ev-time">{o.outcome === 'cancelled_in_time' ? '✕ ' : done && '✓ '}{dragging ? timeOf(drag!.mins) : hhmm(o.start_time)}</span>
-                    <span className="ev-name">{o.players}</span>
+                    <span className="ev-name">{o.kind === 'meeting' && '👥 '}{o.players}</span>
                     {completable && onComplete ? (
                       <span role="button" tabIndex={0} className={o.minutes < 60 ? 'ev-done corner' : 'ev-done'}
                             onPointerDown={(e) => e.stopPropagation()}
@@ -249,8 +250,8 @@ export function CalendarGrid({ days, entries, selected, onPickSlot, onPickEntry,
                       </span>
                     ) : (
                       <span className="ev-sub">
-                        {FORMAT_LABEL[o.format]}
-                        {(!mine || isAdmin) && ` · ${coaches.find((c) => c.id === o.coach_id)?.name ?? ''}`}
+                        {o.kind === 'meeting' ? (o.meeting?.mode === 'online' ? 'Meeting · Online' : 'Meeting · In person') : FORMAT_LABEL[o.format]}
+                        {o.kind !== 'meeting' && (!mine || isAdmin) && ` · ${coaches.find((c) => c.id === o.coach_id)?.name ?? ''}`}
                       </span>
                     )}
                   </button>

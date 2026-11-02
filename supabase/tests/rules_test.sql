@@ -1552,6 +1552,27 @@ select pg_temp.check('confirming a casual session later also gets the method',
 select pg_temp.check('casual sessions use no package credit',
   not exists (select 1 from public.credit_usage where session_id in ('00000000-0000-0000-0000-0000000ca511', '00000000-0000-0000-0000-0000000ca512', '00000000-0000-0000-0000-0000000ca514')));
 
+-- ---------- coach meetings ----------
+reset role;
+create function pg_temp.can_run(q text) returns boolean language plpgsql as $f$ begin execute q; return true; exception when others then return false; end $f$;
+grant execute on function pg_temp.can_run(text) to public;
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select public.create_meeting('Coaches catch-up', public.today_sydney() + 1, '18:00', 60, 'online', null, 'https://zoom.us/j/123', null,
+  array['00000000-0000-0000-0000-0000000000c2','00000000-0000-0000-0000-0000000000c1']::uuid[]) as mid \gset
+select pg_temp.check('admin can add a meeting for coaches', (select count(*) = 2 from public.meeting_coaches where meeting_id = :'mid'));
+select pg_temp.check('in person meeting without a location is refused',
+  not pg_temp.can_run($q$select public.create_meeting('x', public.today_sydney(), '10:00', 60, 'in_person', '', null, null, array['00000000-0000-0000-0000-0000000000c2']::uuid[])$q$));
+select pg_temp.check('online meeting without a link is refused',
+  not pg_temp.can_run($q$select public.create_meeting('x', public.today_sydney(), '10:00', 60, 'online', null, '', null, array['00000000-0000-0000-0000-0000000000c2']::uuid[])$q$));
+reset role; set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select pg_temp.check('an invited coach sees the meeting', (select count(*) = 1 from public.meetings where id = :'mid'));
+select pg_temp.check('an invited coach sees who else is invited', (select count(*) = 2 from public.meeting_coaches where meeting_id = :'mid'));
+select pg_temp.check('a coach cannot add a meeting',
+  not pg_temp.can_run($q$select public.create_meeting('x', public.today_sydney(), '10:00', 60, 'online', null, 'https://z', null, array['00000000-0000-0000-0000-0000000000c2']::uuid[])$q$));
+reset role; set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a3';
+select pg_temp.check('a coach who is not invited does not see the meeting', (select count(*) = 0 from public.meetings where id = :'mid'));
+reset role;
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;

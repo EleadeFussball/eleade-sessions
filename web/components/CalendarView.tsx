@@ -10,7 +10,8 @@ import { useLastLocation } from '@/lib/useLastLocation';
 import { CalendarGrid } from '@/components/CalendarGrid';
 import { addDays, fmtDate, isoWeek, todayISO, weekStart } from '@/lib/dates';
 import { normaliseTime } from '@/lib/time';
-import { entryKey, hhmm, loadSchedule, moveEntry, type ScheduleEntry } from '@/lib/schedule';
+import { MeetingDetail, MeetingForm } from '@/components/Meetings';
+import { entryKey, hhmm, loadMeetings, loadSchedule, moveEntry, type ScheduleEntry } from '@/lib/schedule';
 import { FORMAT_LABEL, MAX_PLAYERS, placeField, type Format } from '@/lib/types';
 
 const FORMATS: Format[] = ['1:1', '2:1', '4:1', 'analysis', 'assessment', 'testing'];
@@ -28,6 +29,7 @@ export function CalendarView({ reloadKey = 0, onChanged }: { reloadKey?: number;
   const [items, setItems] = useState<ScheduleEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [slot, setSlot] = useState<{ day: string; time: string } | null>(null);
+  const [meetingDay, setMeetingDay] = useState<string | null>(null);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [err, setErr] = useState('');
 
@@ -48,7 +50,8 @@ export function CalendarView({ reloadKey = 0, onChanged }: { reloadKey?: number;
 
   const load = useCallback(async () => {
     setLoading(true);
-    setItems(await loadSchedule(from, to));
+    const [sessions, meetings] = await Promise.all([loadSchedule(from, to), loadMeetings(from, to)]);
+    setItems([...sessions, ...meetings]);
     setLoading(false);
   }, [from, to, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const changed = () => { load(); onChanged?.(); };
@@ -56,7 +59,8 @@ export function CalendarView({ reloadKey = 0, onChanged }: { reloadKey?: number;
 
   const mine = who === 'me';
   const shown = useMemo(() => {
-    if (who === 'all') return items;
+    // a meeting with several coaches is one block in the all-coaches view
+    if (who === 'all') return items.filter((o, i) => o.kind !== 'meeting' || items.findIndex((x) => x.kind === 'meeting' && x.ref_id === o.ref_id) === i);
     const id = who === 'me' ? coach?.id : who;
     return id ? items.filter((o) => o.coach_id === id) : items;
   }, [items, who, coach]);
@@ -98,6 +102,7 @@ export function CalendarView({ reloadKey = 0, onChanged }: { reloadKey?: number;
             <button type="button" aria-pressed={!mine} onClick={() => setWho('all')}>All coaches</button>
           </div>
         )}
+        {isAdmin && <button type="button" className="btn small" style={{ flex: '0 0 auto' }} onClick={() => { setSlot(null); setOpenKey(null); setMeetingDay(view === 'day' ? anchor : todayISO()); }}>+ Coach meeting</button>}
         <div className="seg" style={{ flex: '0 1 150px' }}>
           <button type="button" aria-pressed={view === 'day'} onClick={() => setView('day')}>Day</button>
           <button type="button" aria-pressed={view === 'week'} onClick={() => setView('week')}>Week</button>
@@ -122,7 +127,19 @@ export function CalendarView({ reloadKey = 0, onChanged }: { reloadKey?: number;
         </Sheet>
       )}
 
-      {open && (
+      {meetingDay && (
+        <Sheet title="Coach meeting" onClose={() => setMeetingDay(null)}>
+          <MeetingForm day={meetingDay} onCancel={() => setMeetingDay(null)} onSaved={() => { setMeetingDay(null); changed(); }} />
+        </Sheet>
+      )}
+
+      {open && open.kind === 'meeting' && (
+        <Sheet title="Meeting" onClose={() => setOpenKey(null)}>
+          <MeetingDetail o={open} onChange={() => { setOpenKey(null); changed(); }} onDone={() => setOpenKey(null)} />
+        </Sheet>
+      )}
+
+      {open && open.kind !== 'meeting' && (
         <Sheet title="Session" onClose={() => { setOpenKey(null); setOpenMode(''); }}>
           <ul className="list" style={{ borderTop: 0 }}>
             <ScheduleItem key={entryKey(open) + openMode} o={open} startMode={openMode} showDay showCoach={!mine || isAdmin}
