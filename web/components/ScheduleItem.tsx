@@ -65,7 +65,7 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
   }
 
   async function remove() {
-    if (!window.confirm('Take this session off the calendar? Nobody is charged.')) return;
+    if (!window.confirm('Delete this session? Only do this if it was added by mistake. It is taken off the calendar and nothing is recorded or charged.\n\nIf the player cancelled, use Cancel in advance instead, so the cancellation is tracked.')) return;
     setBusy(true); setErr('');
     const { error } = await cancelEntry(o);
     setBusy(false);
@@ -107,7 +107,6 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
             ? <button type="button" className="btn small ghost" onClick={() => setMode('log')}>Cancel in advance</button>
             : <button type="button" className="btn small" onClick={() => setMode('log')}>Log session</button>}
           <button type="button" className="btn small ghost" onClick={() => setMode('move')}>Move</button>
-          {o.kind === 'once' && <button type="button" className="btn small ghost" disabled={busy} onClick={remove}>Remove</button>}
         </div>
       )}
 
@@ -162,6 +161,12 @@ export function ScheduleItem({ o, onDone, showDay = false, showCoach = false, st
         <p className="hint">You can log it as attended from {completeFrom(o)}, five minutes after it ends. A cancellation or no-show can be logged now.</p>
       )}
       {!mine && !o.session_id && <p className="hint">{coachName}&apos;s session.</p>}
+      {o.kind === 'once' && !o.session_id && mode === '' && mine && (
+        <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
+          <button type="button" className="btn small ghost" style={{ color: '#B42318', borderColor: '#B42318' }} disabled={busy} onClick={remove}>Delete session</button>
+          <p className="hint" style={{ marginTop: 6 }}>Only for a session added by mistake. If the player cancelled, use Cancel in advance so it is tracked.</p>
+        </div>
+      )}
       {o.player_ids?.length === 1 && <p className="hint" style={{ marginTop: 6 }}><Link href={`/players/${o.player_ids[0]}`}>Open player</Link></p>}
     </li>
   );
