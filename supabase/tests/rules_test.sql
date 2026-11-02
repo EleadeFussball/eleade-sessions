@@ -1573,6 +1573,24 @@ reset role; set role authenticated; set request.jwt.claim.sub = '00000000-0000-0
 select pg_temp.check('a coach who is not invited does not see the meeting', (select count(*) = 0 from public.meetings where id = :'mid'));
 reset role;
 
+-- ---------- identical one-off booking and regular session are merged ----------
+reset role;
+insert into public.players (id, name) values ('00000000-0000-0000-0000-0000000d0b01', 'Double Kid'), ('00000000-0000-0000-0000-0000000d0b02', 'Other Kid');
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select (public.today_sydney() + 10) as dd \gset
+select public.create_plan('00000000-0000-0000-0000-0000000000c2', '1:1', (extract(isodow from :'dd'::date)::int % 7) + 1, '16:00',
+  array['00000000-0000-0000-0000-0000000d0b01']::uuid[], 'Moore Park', public.today_sydney()) as dd_plan \gset
+select public.book_session('00000000-0000-0000-0000-0000000000c2', :'dd'::date, '16:00', 60, '1:1', array['00000000-0000-0000-0000-0000000d0b01']::uuid[], 'Moore Park', '') as dd_book1 \gset
+select public.book_session('00000000-0000-0000-0000-0000000000c2', :'dd'::date, '16:00', 60, '1:1', array['00000000-0000-0000-0000-0000000d0b02']::uuid[], 'Moore Park', '') as dd_book2 \gset
+select public.change_plan(:'dd_plan', :'dd'::date, extract(isodow from :'dd'::date)::int, '16:00', null, null) as dd_new \gset
+reset role;
+select pg_temp.check('the identical one-off booking is removed when the regular session moves onto it',
+  not exists (select 1 from public.bookings where id = :'dd_book1'));
+select pg_temp.check('a booking for a different player is kept',
+  exists (select 1 from public.bookings where id = :'dd_book2' and cancelled_at is null));
+select pg_temp.check('the merge removes the booking without recording a cancellation',
+  not exists (select 1 from public.sessions where outcome = 'cancelled_in_time' and session_date = :'dd'::date));
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;
