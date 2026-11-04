@@ -42,7 +42,7 @@ export function ClipButton({ playerId, playerName, folderId, label, when }:
       ) : (
         <div className="panel clippick" style={{ width: '100%' }}>
           <p style={{ marginTop: 0 }}><strong>{picked.length} clip{picked.length === 1 ? '' : 's'} for {playerName}</strong><br />
-            <span className="hint">Tick the ones that are good for social media. They are also copied to the Social Media Footage folder.</span></p>
+            <span className="hint">Tick Social media only for a clip that works as content, and make it a different drill from the player clip. It is also copied to the Social Media Footage folder.</span></p>
           <ul className="cliplist">{picked.map((p, i) => (
             <li key={p.url}>
               <video src={p.url} muted playsInline preload="metadata" />
@@ -87,7 +87,7 @@ export function ClipUpload({ playerId, playerName, folderId }: { playerId: strin
   return (
     <section className="panel mt">
       <h2 style={{ marginTop: 0 }}>Session clips</h2>
-      {folderId && <p className="hint">30 to 60 seconds each is ideal. Pick one or several videos from your phone, or record one now.</p>}
+      {folderId && <p className="hint">30 seconds maximum, the best rep only. Pick one or several videos from your phone, or record one now.</p>}
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <ClipButton playerId={playerId} playerName={playerName} folderId={folderId} />
         {isAdmin && folderId && <a className="btn small ghost" href={folderUrl(folderId)} target="_blank" rel="noreferrer">Open Drive folder</a>}
