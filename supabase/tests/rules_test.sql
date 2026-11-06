@@ -1591,6 +1591,33 @@ select pg_temp.check('a booking for a different player is kept',
 select pg_temp.check('the merge removes the booking without recording a cancellation',
   not exists (select 1 from public.sessions where outcome = 'cancelled_in_time' and session_date = :'dd'::date));
 
+-- ---------- casual 2:1: each player pays on his own ----------
+reset role;
+insert into public.players (id, name, payment_plan, casual_method) values
+  ('00000000-0000-0000-0000-0000000ad001', 'Casual One', 'casual', 'bank'),
+  ('00000000-0000-0000-0000-0000000ad002', 'Casual Two', 'casual', 'cash');
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select public.create_booking('00000000-0000-0000-0000-0000000000c2', public.today_sydney(), '10:00', '2:1',
+  array['00000000-0000-0000-0000-0000000ad001','00000000-0000-0000-0000-0000000ad002']::uuid[], 'Moore Park', '') as cp_b \gset
+select public.confirm_booking(:'cp_b', 'attended', 'Passing', 'Good', 'More', 'other') \gset
+reset role;
+select session_id as cp_s from public.bookings where id = :'cp_b' \gset
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select pg_temp.check('a casual 2:1 shows one row per player waiting for payment, at the 2:1 price',
+  (select count(*) = 2 and bool_and(amount = 75) from public.payments_to_confirm where item_id = :'cp_s'));
+select public.confirm_session_player_payment(:'cp_s', '00000000-0000-0000-0000-0000000ad001', 'bank');
+select pg_temp.check('confirming one player leaves the other waiting',
+  (select count(*) = 1 and bool_and(player_id = '00000000-0000-0000-0000-0000000ad002') from public.payments_to_confirm where item_id = :'cp_s')
+  and (select payment_status = 'awaiting' from public.sessions where id = :'cp_s'));
+select public.confirm_session_player_payment(:'cp_s', '00000000-0000-0000-0000-0000000ad002', 'cash');
+select pg_temp.check('the session is paid once every player has paid',
+  (select payment_status = 'confirmed' from public.sessions where id = :'cp_s')
+  and not exists (select 1 from public.payments_to_confirm where item_id = :'cp_s'));
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+select pg_temp.check('a coach cannot confirm a payment',
+  not pg_temp.can_run(format('select public.confirm_session_player_payment(%L, %L)', :'cp_s', '00000000-0000-0000-0000-0000000ad001')));
+reset role;
+
 reset role;
 select case when ok then 'PASS' else 'FAIL' end as result, test, detail from results order by ok, test;
 select count(*) filter (where ok) as passed, count(*) filter (where not ok) as failed from results;

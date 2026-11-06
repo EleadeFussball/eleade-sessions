@@ -42,6 +42,7 @@ function AdminInner() {
   const [pay, setPay] = useState<Pay[]>([]);
   const [unconfirmed, setUnconfirmed] = useState(0);
   const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
+  const [paidBy, setPaidBy] = useState<Record<string, string>>({});
   const [err, setErr] = useState('');
   const { players } = usePlayers();
   const [expiring, setExpiring] = useState<Expiring[]>([]);
@@ -103,10 +104,10 @@ function AdminInner() {
   if (!isAdmin) return <p className="empty">This page is for Jan.</p>;
 
   async function confirmItem(r: ToConfirm) {
-    const q = r.kind === 'session'
-      ? supabase.from('sessions').update({ payment_status: 'confirmed' }).eq('id', r.item_id)
-      : supabase.from('credit_ledger').update({ payment_status: 'confirmed' }).eq('id', r.item_id);
-    const { error } = await q;
+    // a session is confirmed player by player, so in a 2:1 one boy can pay before the other
+    const { error } = r.kind === 'session'
+      ? await supabase.rpc('confirm_session_player_payment', { p_session: r.item_id, p_player: r.player_id, p_method: paidBy[r.item_id + r.player_id] ?? (['stripe', 'cash', 'bank'].includes(r.payment_method ?? '') ? r.payment_method : 'bank') })
+      : await supabase.from('credit_ledger').update({ payment_status: 'confirmed' }).eq('id', r.item_id);
     if (error) setErr(errorText(error)); else load();
   }
 
@@ -183,7 +184,7 @@ function AdminInner() {
       </Fold>
 
       <Fold id="fold-toconfirm" title="Payments to confirm" taskKey="toconfirm">
-        <p className="hint">Assessments, packages and cash handed to you that the coaches recorded. Check Stripe, your bank account or the cash you collected, then confirm. Cash that coaches keep is taken off their weekly invoice instead.</p>
+        <p className="hint">Assessments, packages, casual sessions and cash handed to you that the coaches recorded. Check Stripe, your bank account or the cash you collected, then confirm. In a 2:1 each player is confirmed on his own. Cash that coaches keep is taken off their weekly invoice instead.</p>
         {toConfirm.length === 0 ? <p className="empty">Nothing to confirm.</p> : (
           <table className="t">
             <thead><tr><th>Player</th><th>What</th><th className="n">Amount</th><th></th></tr></thead>
@@ -192,7 +193,16 @@ function AdminInner() {
                 <td><Link href={`/players/${r.player_id}`}>{r.name}</Link><br /><span className="hint">{fmtDate(r.item_date)}{r.recorded_by ? `, by ${r.recorded_by}` : ''}</span></td>
                 <td>{r.what}<br /><span className="hint">{r.payment_method ? `Coach says: ${METHOD[r.payment_method] ?? r.payment_method}` : 'Not paid yet'}</span></td>
                 <td className="n">{money(r.amount)}</td>
-                <td className="n"><button className="btn small ghost" type="button" onClick={() => confirmItem(r)}>Confirm paid</button>
+                <td className="n">
+                  {r.kind === 'session' && (
+                    <select aria-label={`How ${r.name} paid`} style={{ marginBottom: 6, maxWidth: 120 }}
+                      value={paidBy[r.item_id + r.player_id] ?? (['stripe', 'cash', 'bank'].includes(r.payment_method ?? '') ? (r.payment_method as string) : 'bank')}
+                      onChange={(e) => setPaidBy({ ...paidBy, [r.item_id + r.player_id]: e.target.value })}>
+                      <option value="bank">Bank transfer</option><option value="cash">Cash</option><option value="stripe">Stripe</option>
+                    </select>
+                  )}
+                  {r.kind === 'session' && <br />}
+                  <button className="btn small ghost" type="button" onClick={() => confirmItem(r)}>Confirm paid</button>
                   {r.kind === 'package' && <><br /><Link className="linkbtn" href={`/players/${r.player_id}`}>Edit or delete</Link></>}</td>
               </tr>
             ))}</tbody>
